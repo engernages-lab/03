@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from typing import Any, Dict, List, Optional
+from contextlib import AsyncExitStack
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 from urllib.parse import urlencode
 
 import httpx
@@ -243,18 +244,54 @@ class SubsonicAdapter(SourceAdapter):
             "upstream": f"{self.base_url}/rest/stream.view?{query}",
         }
 
-    async def fetch_stream_bytes(self, external_track_id: str):
+    async def fetch_stream_bytes(self, external_track_id: str, range_header: Optional[str] = None):
+        _meta, iterator = await self.open_stream(external_track_id, range_header)
+        async for chunk in iterator:
+            yield chunk
+
+    async def open_stream(
+        self, external_track_id: str, range_header: Optional[str] = None
+    ) -> Tuple[Dict[str, Any], AsyncIterator[bytes]]:
+        """Open an upstream stream and return ``(meta, async_iterator)``.
+
+        ``meta`` carries the upstream status and range headers so the caller can
+        relay a real ``206 Partial Content`` instead of pretending byte ranges
+        are unsupported.
+        """
         query = {**self._auth_params(), "id": external_track_id}
-        async with (
-            self._client() as client,
-            client.stream("GET", "/rest/stream.view", params=query) as response,
-        ):
-            if response.status_code in (401, 403):
-                raise ProviderAuthError("stream was rejected by the server")
-            if response.status_code >= 400:
-                raise ProviderError(f"server returned HTTP {response.status_code}")
-            async for chunk in response.aiter_bytes(64 * 1024):
-                yield chunk
+        headers = {"Range": range_header} if range_header else None
+        stack = AsyncExitStack()
+        try:
+            client = await stack.enter_async_context(self._client())
+            response = await stack.enter_async_context(
+                client.stream("GET", "/rest/stream.view", params=query, headers=headers)
+            )
+        except httpx.HTTPError as exc:
+            await stack.aclose()
+            raise ProviderUnavailableError(f"could not reach the server: {exc}") from exc
+
+        if response.status_code in (401, 403):
+            await stack.aclose()
+            raise ProviderAuthError("stream was rejected by the server")
+        if response.status_code >= 400:
+            await stack.aclose()
+            raise ProviderError(f"server returned HTTP {response.status_code}")
+
+        async def iterator():
+            try:
+                async for chunk in response.aiter_bytes(64 * 1024):
+                    yield chunk
+            finally:
+                await stack.aclose()
+
+        meta = {
+            "status": response.status_code,
+            "content_type": response.headers.get("content-type"),
+            "content_range": response.headers.get("content-range"),
+            "content_length": response.headers.get("content-length"),
+            "accept_ranges": response.headers.get("accept-ranges"),
+        }
+        return meta, iterator()
 
     # -- mapping -----------------------------------------------------------
     def _track_dto(self, raw: Dict[str, Any]) -> TrackDTO:

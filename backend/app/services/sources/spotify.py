@@ -47,6 +47,7 @@ SCOPES = [
 class SpotifyAdapter(SourceAdapter):
     provider = "spotify"
     display_name = "Spotify"
+    SCOPES = SCOPES
     capabilities = SourceCapabilities(
         metadata=True,
         playback=True,          # via Web Playback SDK / official controls

@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -227,6 +227,50 @@ def get_permissions(source_id: str, db: Session = Depends(get_db)) -> Dict[str, 
         "ai_processing_permission": record.ai_processing_permission,
         "model_training_permission": record.model_training_permission,
         "notes": record.notes,
+    }
+
+
+@router.get("/{source_id}/apple/developer-token")
+def apple_developer_token(source_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """Mint the ES256 developer token MusicKit needs (Apple Music only).
+
+    The token itself is short-lived (24h) and only grants access to the Apple
+    Music catalog API for this app; the user's own authorisation still comes
+    from MusicKit in the browser.
+    """
+    record = library.get_source(db, source_id)
+    if record.provider != "apple_music":
+        raise ValidationAppError(
+            "this endpoint only serves Apple Music sources", code="PROVIDER_MISMATCH"
+        )
+    adapter = registry.build_adapter(record, session=db)
+    token = adapter.developer_token()  # raises PROVIDER_NOT_CONFIGURED when incomplete
+    return {
+        "developer_token": token,
+        "storefront": getattr(adapter, "storefront", None),
+        "expires_in": 86_400,
+        "usage": "MusicKit.configure({ developerToken, app: { name, build } })",
+    }
+
+
+@router.get("/{source_id}/spotify/authorize-url")
+def spotify_authorize_url(
+    source_id: str, state: Optional[str] = Query(default=None), db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    record = library.get_source(db, source_id)
+    if record.provider != "spotify":
+        raise ValidationAppError(
+            "this endpoint only serves Spotify sources", code="PROVIDER_MISMATCH"
+        )
+    from app.core.crypto import encode_state
+
+    adapter = registry.build_adapter(record, session=db)
+    oauth_state = state or encode_state(source_id)
+    return {
+        "authorize_url": adapter.authorize_url(oauth_state),
+        "state": oauth_state,
+        "scopes": list(getattr(adapter, "SCOPES", [])) or None,
+        "note": "Spotify 授权后仅使用元数据与官方播放控制；AI 分析被平台政策禁止。",
     }
 
 

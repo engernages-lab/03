@@ -1,4 +1,8 @@
-"""Playback: stream resolution, provider-safe proxying, history."""
+"""Playback: stream resolution, provider-safe proxying with Range relay.
+
+The proxy never bypasses provider permissions: Spotify is rejected outright,
+and providers without a byte-stream capability cannot be proxied at all.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.core.errors import AppError, ValidationAppError
+from app.core.errors import AppError, ProviderError, ProviderUnavailableError, ValidationAppError
 from app.services import library
 from app.services.sources import registry
 
@@ -53,11 +57,7 @@ async def proxy_stream(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """Server-side proxy for providers that require authenticated streaming.
-
-    Only providers whose adapter exposes ``fetch_stream_bytes`` are proxied;
-    providers with policy restrictions (Spotify) never reach this path.
-    """
+    """Authenticated byte proxy that relays upstream status and Range headers."""
     source = library.get_source(db, source_id)
     adapter = registry.build_adapter(source, session=db)
     if source.provider == "spotify":
@@ -66,22 +66,28 @@ async def proxy_stream(
             code="PROVIDER_RESTRICTED",
             status_code=403,
         )
-    if not hasattr(adapter, "fetch_stream_bytes"):
+    if not hasattr(adapter, "open_stream"):
         raise ValidationAppError(
             "this provider cannot be proxied", code="PLAYBACK_UNAVAILABLE", status_code=409
         )
 
     range_header = request.headers.get("range")
+    try:
+        meta, iterator = await adapter.open_stream(external_id, range_header)
+    except ProviderError:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive
+        raise ProviderUnavailableError(f"upstream stream failed: {exc}") from exc
 
-    async def generator():
-        async for chunk in adapter.fetch_stream_bytes(external_id):
-            yield chunk
+    headers = {"Accept-Ranges": meta.get("accept_ranges") or "bytes"}
+    if meta.get("content_range"):
+        headers["Content-Range"] = meta["content_range"]
+    if meta.get("content_length"):
+        headers["Content-Length"] = meta["content_length"]
 
-    headers = {"Accept-Ranges": "bytes"}
-    if range_header:
-        # Upstream range handling differs per server; we pass the request through
-        # and let the client re-request if the server ignores it.
-        headers["X-Proxy-Range-Passthrough"] = range_header
     return StreamingResponse(
-        generator(), media_type="audio/mpeg", headers=headers
+        iterator,
+        status_code=int(meta.get("status") or 200),
+        media_type=meta.get("content_type") or "audio/mpeg",
+        headers=headers,
     )
