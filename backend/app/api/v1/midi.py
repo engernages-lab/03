@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
@@ -75,9 +77,15 @@ async def import_file(
 def export_midi(document_id: str, db: Session = Depends(get_db)) -> Response:
     document = repository.load_document(db, document_id)
     payload = document_to_midi_bytes(document)
-    ascii_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in document.title)[:40] or "score"
+    # Header values must be latin-1 safe. Note that str.isalnum() is True for CJK,
+    # so a character-class regex is required here - not isalnum().
+    ascii_name = re.sub(r"[^A-Za-z0-9._-]+", "_", document.title or "score").strip("_")[:40] or "score"
+    disposition = (
+        f'attachment; filename="{ascii_name}.mid"; '
+        f"filename*=UTF-8''{quote(f'{document.title or \"score\"}.mid')}"
+    )
     return Response(
         content=payload,
         media_type="audio/midi",
-        headers={"Content-Disposition": f'attachment; filename="{ascii_name}.mid"'},
+        headers={"Content-Disposition": disposition},
     )

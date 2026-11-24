@@ -4,7 +4,12 @@ import path from "node:path";
 
 const API_TARGET = process.env.VITE_DEV_API_TARGET ?? "http://127.0.0.1:8000";
 
+// GitHub Pages serves the app from /<repo>/ so the base path must be injectable.
+// Local dev/self-hosting keeps "/".
+const BASE_PATH = process.env.VITE_BASE_PATH ?? "/";
+
 export default defineConfig({
+  base: BASE_PATH,
   plugins: [react()],
   resolve: {
     alias: {

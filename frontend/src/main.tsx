@@ -20,10 +20,14 @@ export const queryClient = new QueryClient({
   },
 });
 
+// When hosted under a sub-path (GitHub Pages: /03/) the router must share the
+// same basename, otherwise every link leaves the app.
+const BASE_PATH = import.meta.env.BASE_URL.replace(/\/$/, "");
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter basename={BASE_PATH || undefined}>
         <App />
       </BrowserRouter>
     </QueryClientProvider>

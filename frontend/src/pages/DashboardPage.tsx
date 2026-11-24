@@ -15,6 +15,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { useHealth, useReadiness } from "../lib/hooks";
+import { hasConfiguredApi, isStaticPagesPreview } from "../lib/deployment";
 import { useLibraryStats, useSources } from "../lib/resources";
 import { usePlayerStore } from "../store/player";
 import { Badge, Dot } from "../components/ui/Badge";
@@ -64,18 +65,45 @@ export function DashboardPage() {
   }
 
   if (health.isError) {
+    const staticPreview = isStaticPagesPreview() && !hasConfiguredApi();
     return (
       <div className="panel border-key-rose/30 p-6">
         <div className="flex items-start gap-3">
           <TriangleAlert className="mt-0.5 text-key-rose" size={20} />
-          <div className="space-y-1">
-            <h2 className="text-sm font-semibold text-white">无法连接后端 API</h2>
-            <p className="text-xs leading-relaxed text-studio-400">
-              请确认 FastAPI 服务已启动：
-              <code className="font-mono text-studio-200">uvicorn app.main:app --port 8000</code>
-              （默认 http://127.0.0.1:8000）。前端开发服务器通过 <code className="font-mono">/api</code> 代理访问后端。
-            </p>
-            <p className="font-mono text-[11px] text-studio-500">{(health.error as Error)?.message}</p>
+          <div className="space-y-2">
+            <h2 className="text-sm font-semibold text-white">
+              {staticPreview ? "这是静态预览页，未连接 API" : "无法连接后端 API"}
+            </h2>
+            {staticPreview ? (
+              <>
+                <p className="text-xs leading-relaxed text-studio-400">
+                  当前页面托管在 GitHub Pages 上，只包含前端资源。要让整站可用（音乐库、播放器、
+                  MIDI 导入、双谱编辑、导出），需要把后端 API 部署到公网，并在构建时注入它的地址。
+                </p>
+                <pre className="overflow-x-auto rounded-lg border border-studio-800 bg-studio-950/80 p-3 font-mono text-[11px] leading-relaxed text-studio-300">
+{`# 方式一：单容器（API 同时托管本页）
+docker compose up --build
+
+# 方式二：前后端分离，构建时注入公网 API 地址
+cd frontend
+VITE_API_BASE_URL=https://api.example.com npm run build`}
+                </pre>
+                <p className="text-[11px] text-studio-500">
+                  后端部署清单见仓库 <code className="font-mono">docs/deployment.md</code>；
+                  部署完成后可用 <code className="font-mono">scripts/deploy_check.py</code> 一键验收。
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-xs leading-relaxed text-studio-400">
+                  请确认 FastAPI 服务已启动：
+                  <code className="font-mono text-studio-200">uvicorn app.main:app --port 8000</code>
+                  （默认 http://127.0.0.1:8000）。前端开发服务器通过
+                  <code className="font-mono">/api</code> 代理访问后端。
+                </p>
+                <p className="font-mono text-[11px] text-studio-500">{(health.error as Error)?.message}</p>
+              </>
+            )}
           </div>
         </div>
       </div>
