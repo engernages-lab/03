@@ -61,7 +61,7 @@ const JOB_TONE: Record<string, "success" | "warning" | "danger" | "info" | "neut
 function JobCard({ job }: { job: TranscriptionJob }) {
   const run = useRunTranscriptionJob();
   return (
-    <div className="rounded-lg border border-studio-800 bg-studio-950/40 p-3">
+    <div data-testid="job-card" className="rounded-lg border border-studio-800 bg-studio-950/40 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone={JOB_TONE[job.status] ?? "neutral"}>{job.status}</Badge>
         <span className="font-mono text-[10px] text-studio-500">{job.job_id}</span>

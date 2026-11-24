@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -39,6 +40,14 @@ def models() -> Dict[str, Any]:
     }
 
 
+def _run_sync_job(job_id: str) -> None:
+    session = get_session_factory()()
+    try:
+        transcription.run_job(session, job_id)
+    finally:
+        session.close()
+
+
 @router.post("/jobs", status_code=status.HTTP_201_CREATED)
 def create_job(
     payload: JobCreateRequest,
@@ -54,12 +63,11 @@ def create_job(
     )
     job_id = job.id
 
-    def _run() -> None:
-        session = get_session_factory()()
-        try:
-            transcription.run_job(session, job_id)
-        finally:
-            session.close()
+    async def _run() -> None:
+        # The analysis is CPU-bound (decode + librosa + numba JIT). Running it on
+        # the event loop would freeze every other request for its whole duration,
+        # which is exactly what made the UI look stuck at "preprocessing".
+        await run_in_threadpool(_run_sync_job, job_id)
 
     background.add_task(_run)
     return transcription.job_to_dict(job)

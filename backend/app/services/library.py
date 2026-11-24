@@ -14,6 +14,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError
@@ -69,24 +70,33 @@ DEFAULT_PERMISSIONS = {
 # ---------------------------------------------------------------------------
 
 def ensure_local_source(session: Session) -> MusicSourceRecord:
+    """Return the built-in local source, creating it on first use.
+
+    Two concurrent requests can both see "missing" and race to insert, so the
+    insert is guarded: on an integrity error the winner's row is re-read instead
+    of surfacing a 500 to the loser.
+    """
     record = session.get(MusicSourceRecord, LOCAL_SOURCE_ID)
-    if record is None:
-        record = MusicSourceRecord(
-            id=LOCAL_SOURCE_ID,
-            provider="local",
-            display_name="本地音乐",
-            status="connected",
-            config_json="{}",
-            capabilities_json=json.dumps(
-                {
-                    "metadata": True, "playback": True, "audio_read": True,
-                    "ai_processing": False, "model_training": False,
-                    "playlists": True, "search": True, "favorites": True,
-                    "requires_auth": False,
-                }
-            ),
-        )
-        session.add(record)
+    if record is not None:
+        return record
+
+    record = MusicSourceRecord(
+        id=LOCAL_SOURCE_ID,
+        provider="local",
+        display_name="本地音乐",
+        status="connected",
+        config_json="{}",
+        capabilities_json=json.dumps(
+            {
+                "metadata": True, "playback": True, "audio_read": True,
+                "ai_processing": False, "model_training": False,
+                "playlists": True, "search": True, "favorites": True,
+                "requires_auth": False,
+            }
+        ),
+    )
+    session.add(record)
+    try:
         session.flush()
         session.add(
             MusicSourcePermissionRecord(
@@ -94,7 +104,13 @@ def ensure_local_source(session: Session) -> MusicSourceRecord:
             )
         )
         session.commit()
-    return record
+        return record
+    except IntegrityError:
+        session.rollback()
+        existing = session.get(MusicSourceRecord, LOCAL_SOURCE_ID)
+        if existing is None:  # pragma: no cover - only on an unexpected conflict
+            raise
+        return existing
 
 
 def list_sources(session: Session) -> List[MusicSourceRecord]:

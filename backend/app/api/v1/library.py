@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.core.timeutils import utc_iso
 from app.models.source import MusicSourceRecord, UnifiedTrackRecord
 from app.schemas.common import Page
 from app.services import library
@@ -205,7 +206,7 @@ def playlists(db: Session = Depends(get_db)) -> Dict[str, Any]:
                 "track_count": len(library.playlist_tracks(db, record.id)),
                 "source_id": record.source_id,
                 "is_user_owned": record.is_user_owned,
-                "created_at": record.created_at,
+                "created_at": utc_iso(record.created_at),
             }
             for record in rows
         ],
@@ -221,7 +222,7 @@ def create_playlist(payload: PlaylistCreate, db: Session = Depends(get_db)) -> D
         "name": record.name,
         "description": record.description,
         "track_count": 0,
-        "created_at": record.created_at,
+        "created_at": utc_iso(record.created_at),
     }
 
 
@@ -270,7 +271,7 @@ def history(
         "items": [
             {
                 "history_id": entry.id,
-                "played_at": entry.played_at,
+                "played_at": utc_iso(entry.played_at),
                 "position": entry.position_seconds,
                 "completed": entry.completed,
                 "track": _track_out(db, track),
@@ -284,7 +285,7 @@ def history(
 @router.post("/history", status_code=status.HTTP_201_CREATED)
 def add_history(payload: HistoryCreate, db: Session = Depends(get_db)) -> Dict[str, Any]:
     entry = library.record_play(db, payload.track_id, payload.position, payload.completed)
-    return {"history_id": entry.id, "played_at": entry.played_at}
+    return {"history_id": entry.id, "played_at": utc_iso(entry.played_at)}
 
 
 @router.delete("/history", status_code=status.HTTP_200_OK)

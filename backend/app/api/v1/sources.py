@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.errors import ValidationAppError
+from app.core.timeutils import as_utc
 from app.models.source import MusicSourceRecord
 from app.services import library
 from app.services.sources import registry
@@ -71,7 +72,7 @@ def _source_out(session: Session, record: MusicSourceRecord) -> SourceOut:
         provider=record.provider,
         display_name=record.display_name,
         status=record.status,
-        connected_at=record.connected_at,
+        connected_at=as_utc(record.connected_at),
         last_error=record.last_error,
         capabilities=adapter.capability_report(),
         policy_note=adapter.capabilities.policy_note,

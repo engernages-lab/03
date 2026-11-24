@@ -221,3 +221,19 @@ def test_spotify_proxy_is_forbidden(client, db_session):
     response = client.get(f"/api/v1/playback/proxy/{source.id}/sp-1")
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "PROVIDER_RESTRICTED"
+
+def test_ensure_local_source_is_idempotent(db_session):
+    """Concurrent first-use requests must not surface a UNIQUE violation."""
+    from sqlalchemy import func, select
+
+    from app.models.source import MusicSourceRecord
+
+    first = library.ensure_local_source(db_session)
+    second = library.ensure_local_source(db_session)
+    assert first.id == second.id == library.LOCAL_SOURCE_ID
+    count = db_session.execute(
+        select(func.count())
+        .select_from(MusicSourceRecord)
+        .where(MusicSourceRecord.provider == "local")
+    ).scalar()
+    assert count == 1

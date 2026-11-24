@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, NotFoundError, ValidationAppError
 from app.core.logging import get_logger
+from app.core.timeutils import utc_iso
 from app.models.audio import AudioAssetRecord
 from app.models.source import TranscriptionJobRecord
 from app.schemas.music_document import new_id
@@ -184,8 +185,8 @@ def job_to_dict(job: TranscriptionJobRecord) -> Dict[str, Any]:
         "analysis": json.loads(job.analysis_json) if job.analysis_json else None,
         "warnings": json.loads(job.warnings_json) if job.warnings_json else [],
         "error": job.error,
-        "created_at": job.created_at.isoformat() if job.created_at else None,
-        "updated_at": job.updated_at.isoformat() if job.updated_at else None,
+        "created_at": utc_iso(job.created_at),
+        "updated_at": utc_iso(job.updated_at),
     }
 
 

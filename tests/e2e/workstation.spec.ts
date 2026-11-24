@@ -75,10 +75,14 @@ test("导入本地音乐 → 播放 → 检查扒谱资格 → 进入分析输�
   await page.getByRole("button", { name: "创建分析作业", exact: true }).click();
   await expect(page.getByText(/已创建分析作业/)).toBeVisible({ timeout: 15_000 });
 
-  // 7. the job runs the real signal analysis and refuses to invent notes
-  await expect(page.getByText("analysis_only").first()).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/生成音符 0 个/).first()).toBeVisible();
-  await expect(page.getByText(/未内置扒谱模型/).first()).toBeVisible();
+  // 7. the job runs the real signal analysis and refuses to invent notes.
+  //    Scope assertions to the job card: the page also contains explanatory
+  //    prose mentioning "analysis_only", which must not satisfy the check.
+  const jobCard = page.getByTestId("job-card").first();
+  await expect(jobCard).toBeVisible({ timeout: 15_000 });
+  await expect(jobCard.getByText("analysis_only", { exact: true })).toBeVisible({ timeout: 120_000 });
+  await expect(jobCard.getByText(/生成音符 0 个/)).toBeVisible();
+  await expect(jobCard.getByText(/未内置扒谱模型/)).toBeVisible({ timeout: 15_000 });
 });
 
 test("导入 MIDI → 生成格子谱 → 切换数字谱 → 编辑音符并保持同步", async ({ page }) => {
