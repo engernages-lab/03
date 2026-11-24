@@ -1,0 +1,33 @@
+# Render blueprint for the PocketScore AI API (https://render.com/docs/blueprint-spec)
+# Deploy: connect the repository, Render reads this file, then set the secrets below.
+services:
+  - type: web
+    name: pocketscore-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /api/v1/health/ready
+    envVars:
+      - key: POCKETSCORE_ENVIRONMENT
+        value: production
+      - key: POCKETSCORE_DEBUG
+        value: "false"
+      - key: POCKETSCORE_LOG_JSON
+        value: "true"
+      - key: POCKETSCORE_DATABASE_URL
+        value: sqlite:////data/pocketscore.db
+      - key: POCKETSCORE_STORAGE_DIR
+        value: /data/storage
+      # Public URL of the frontend, for CORS.
+      - key: POCKETSCORE_CORS_ORIGINS
+        sync: false
+      # Generated once, then pasted into the dashboard (never committed).
+      - key: POCKETSCORE_TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: POCKETSCORE_SESSION_SECRET
+        generateValue: true
+    disk:
+      name: pocketscore-data
+      mountPath: /data
+      sizeGB: 5

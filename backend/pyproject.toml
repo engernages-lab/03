@@ -1,0 +1,16 @@
+[tool.ruff]
+line-length = 110
+target-version = "py39"
+exclude = [".venv", "data", "__pycache__"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "C4", "SIM"]
+ignore = [
+    "B008",   # FastAPI Depends() in defaults is idiomatic
+    "E501",   # line length handled by formatter
+    "UP006",  # typing.List vs list is intentional for py39 runtime annotations
+    "UP035",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "B011"]

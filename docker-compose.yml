@@ -1,0 +1,27 @@
+# PocketScore AI - one-command local production stack
+#   docker compose up --build
+# Frontend is served by the API container (single origin, no CORS needed).
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: pocketscore-api:1.0.0-a
+    ports:
+      - "8000:8000"
+    environment:
+      POCKETSCORE_ENVIRONMENT: production
+      POCKETSCORE_DEBUG: "false"
+      POCKETSCORE_LOG_JSON: "true"
+      POCKETSCORE_CORS_ORIGINS: "http://localhost:8000"
+      POCKETSCORE_ALLOW_PRIVATE_NETWORK_SOURCES: "true"
+      POCKETSCORE_MAX_UPLOAD_MB: "200"
+      # Set a real Fernet key in production:
+      # POCKETSCORE_TOKEN_ENCRYPTION_KEY: "<base64 32 bytes>"
+      POCKETSCORE_SESSION_SECRET: "change-me-in-production"
+    volumes:
+      - pocketscore-data:/data
+    restart: unless-stopped
+
+volumes:
+  pocketscore-data:
