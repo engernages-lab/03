@@ -82,10 +82,11 @@
 
 ## 7. 接口（新增 47 条）
 
-- `/api/v1/sources`：`providers` · CRUD · `/{id}/test` · `/{id}/sync` · `/{id}/permissions`
+- `/api/v1/sources`：`providers` · CRUD · `/{id}/test` · `/{id}/sync` · `/{id}/permissions` ·
+  `/{id}/apple/developer-token`（ES256 JWT，测试中用公钥验签）· `/{id}/spotify/authorize-url`
 - `/api/v1/library`：`tracks` · `import` · `stats` · `albums` · `artists` · `favorites` ·
   `playlists`(+tracks) · `history`
-- `/api/v1/playback`：`stream/{track_id}` · `proxy/{source_id}/{external_id}`
+- `/api/v1/playback`：`stream/{track_id}` · `proxy/{source_id}/{external_id}`（转发 Range 并中继 206/Content-Range）
 - `/api/v1/eligibility`：`/{track_id}` · `/source/{source_id}`
 - `/api/v1/transcription`：`models` · `jobs` · `jobs/{id}` · `run` · `cancel`
 
@@ -128,11 +129,14 @@ $ .\.venv\Scripts\python.exe -m pytest tests/test_library.py tests/test_eligibil
 
 | 项 | 说明 | 后续 |
 | --- | --- | --- |
-| Apple Music 真实账号测试 | 缺开发者凭据（Team/Key/.p8）与 MusicKit 前端集成 | 提供凭据后补 |
-| Spotify 真实 OAuth | 缺 Client ID/Secret；且政策禁止 AI 分析，仅元数据 | 提供凭据后补 |
+| Apple Music 真实账号测试 | 缺开发者凭据（Team/Key/.p8）与 MusicKit 前端集成；**Token 生成已实现并用真实公钥验签** | 提供凭据后补 |
+| Spotify 真实 OAuth | 缺 Client ID/Secret；**授权 URL 端点已实现**，且政策禁止 AI 分析，仅元数据 | 提供凭据后补 |
 | Navidrome 真实服务器 | 无实例；协议层已按官方 API 实现并 Mock 验证 | 提供地址后可实测 |
 | 本地"文件夹授权扫描" | 当前为“用户选择文件上传”；浏览器目录扫描需 File System Access API | V1.0-B |
-| 播放器 Range 代理 | Subsonic 代理未做 Range 透传细节 | V1.0-B |
+
+> 编排说明：Subsonic 播放代理的 Range 透传已在 A.8 收尾时补齐
+> （`open_stream()` 转发 `Range` 并中继 `206` / `Content-Range` / `Content-Length`，
+> 5 项测试覆盖），不再列为已知缺口。
 
 ## 11. 验收
 

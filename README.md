@@ -20,9 +20,11 @@
 | A.6 | 格子谱引擎 | ✅ 完成 |
 | A.7 | 数字谱与双格式同步 | ✅ 完成 |
 | A.8 | 多音源音乐中心与完整播放器 | ✅ 完成（外部平台按真实授权情况交付，见报告） |
-| A.9 | 数据库、测试与部署 | ✅ 完成（公网部署与 Push 待用户授权，见报告） |
+| A.9 | 数据库、测试与部署 | 🟡 测试与部署产物完成；公网部署待托管凭据（Push 已完成） |
 
-**测试现状**：后端 `pytest` **215 passed** · 前端 `vitest` **39 passed** · 端到端 `playwright` **6 passed**
+**测试现状**：后端 `pytest` **229 passed** · 前端 `vitest` **39 passed** · 端到端 `playwright` **6 passed**
+
+仓库：<https://github.com/engernages-lab/03>（`main`，公开）
 
 阶段报告见 [`docs/reports/`](docs/reports/)，界面截图见 [`docs/screenshots/`](docs/screenshots/)。
 

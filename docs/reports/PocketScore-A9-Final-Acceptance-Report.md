@@ -49,7 +49,7 @@ SQLite 连接级开启 `foreign_keys=ON` 与 WAL。
 
 ```text
 $ .\.venv\Scripts\python.exe -m pytest
-215 passed in 24.02s
+229 passed in 24.21s
 ```
 
 | 测试文件 | 数量 | 覆盖 |
@@ -67,6 +67,8 @@ $ .\.venv\Scripts\python.exe -m pytest
 | `test_eligibility.py` | 11 | 五权限矩阵、Spotify 强制限制、Apple 需上传 |
 | `test_sources_subsonic.py` | 12 | OpenSubsonic 协议、认证签名、错误映射 |
 | `test_sources_ssrf.py` | 9 | SSRF 防护 |
+| `test_sources_apple_spotify.py` | 9 | Apple ES256 开发者令牌（真实公钥验签）、Spotify OAuth URL |
+| `test_playback_proxy.py` | 5 | Range 中继、206/Content-Range、认证错误映射 |
 | `test_transcription.py` | 8 | 作业状态机、无模型不造假、权限闸门 |
 
 > 第三方平台测试使用 `httpx.MockTransport` 模拟真实 OpenSubsonic 响应；
@@ -137,13 +139,14 @@ $ python -m ruff check app tests        → All checks passed!
 
 ## 4. 仓库与 Git
 
-- 已 `git init -b main`，首次提交 `e4105db`，**183 个文件 / 2.02 MB**（不含依赖与缓存）。
+- 已 `git init -b main`，本地提交 3 个（`e4105db`、`c68c290`、`ed35990`），**187 个文件**（不含依赖与缓存）。
 - `.gitignore` 排除：`node_modules/`、`.venv/`、`dist/`、`data/`、`*.db`、`.env*`、
   `.npm-cache/`、`.pip-cache/`、`.playwright/`、`test-results/`、`tests/e2e/report/`。
 - 提交前扫描确认：**没有任何缓存目录、没有 `.env`、没有密钥文件**。
-- 远程仓库检查：`git ls-remote https://github.com/engernages-lab/03` 返回 0 条引用 →
-  该仓库当前为空，**不存在需要保留的既有内容**，因此不会覆盖其他项目文件。
-- **Push 未执行**：任务书 A.9.4 要求「由用户授权后执行 Push」。
+- 远程仓库检查：推送前 `git ls-remote` 返回 0 条引用 → 该仓库为空，**不存在需要保留的既有内容**。
+- **Push 已执行**（用户授权后，SSH，账号 `engernages-lab`）：`main -> main` 新建分支成功。
+- 独立验证：GitHub REST API 返回 `commits/main` = `ed35990a5a8c…`，树内 **187 个 blob**，
+  且不含任何密钥/缓存路径。
 
 ## 5. 部署产物
 
@@ -166,9 +169,9 @@ $ python -m ruff check app tests        → All checks passed!
 | --- | --- |
 | 后端源码 | 61 个 Python 文件 / 7,579 行 |
 | 前端源码 | 43 个 TS/TSX 文件 / 6,240 行 |
-| API 路由 | 79 条（全部 `/api/v1`） |
+| API 路由 | 81 条（全部 `/api/v1`） |
 | 数据库表 | 16 张业务表 |
-| 自动化测试 | 215 + 39 + 6 = **260 项通过** |
+| 自动化测试 | 229 + 39 + 6 = **274 项通过** |
 | 文档 | 6 个 Skill + 9 份报告 + 架构/API/部署 3 份指南 + 8 张截图 |
 
 ---
@@ -199,5 +202,5 @@ $ python -m ruff check app tests        → All checks passed!
 
 ## 9. 验收结论
 
-**A.9 = CONDITIONAL PASS**：数据库、260 项自动化测试、本地生产模式全部通过；
-GitHub Push 与公网部署因缺少用户授权/凭据未执行，已明确记录且不谎报完成。
+**A.9 = CONDITIONAL PASS**：数据库、229 项后端测试 + 39 前端 + 6 E2E、本地生产模式全部通过；
+GitHub Push 已按用户授权完成并验证；公网部署因缺少托管凭据未执行，已明确记录且不谎报完成。

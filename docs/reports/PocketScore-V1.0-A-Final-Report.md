@@ -138,13 +138,14 @@ React SPA ──/api/v1──► FastAPI 路由层（Pydantic 校验）
 
 | 层级 | 工具 | 结果 |
 | --- | --- | --- |
-| 后端单元+集成 | Pytest | **215 passed**（25.9s） |
+| 后端单元+集成 | Pytest | **229 passed**（24.2s） |
 | 前端单元 | Vitest | **39 passed**（5 文件） |
 | 端到端 | Playwright Chromium | **6 passed**（10.2s） |
 | 静态检查 | Ruff | **All checks passed** |
 | 类型检查 | `tsc --noEmit` | **exit 0** |
 | 生产构建 | `vite build` | 成功（JS 351 kB / gzip 105 kB） |
 | 生产模式 | uvicorn + dist | `/`、`/scores`、`/keyboard`→HTML；`/api/v1/health`→JSON；`/api/v1/nope`→404 JSON |
+| 合计 | — | **274 项自动化测试通过** |
 
 ## 12. 安全检查
 
@@ -165,9 +166,20 @@ React SPA ──/api/v1──► FastAPI 路由层（Pydantic 校验）
 https://github.com/engernages-lab/03
 ```
 
-- 远程检查：`git ls-remote` 返回 0 条引用 → **仓库为空**，无既有内容需要保留，不会覆盖其他项目。
-- 本地 `main` 已提交（`e4105db`，183 文件 / 2.02 MB）。
-- **Push 未执行**：任务书要求「由用户授权后执行 Push」。
+- 仓库状态：**公开**（public），默认分支 `main`。
+- 远程检查：推送前 `git ls-remote` 返回 0 条引用 → 仓库为空，无既有内容需要保留，未覆盖任何其他项目。
+- **已推送**（2026-11-24，SSH，账号 `engernages-lab`），共 3 个提交：
+
+| 提交 | 说明 |
+| --- | --- |
+| `e4105db` | feat(V1.0-A): 全量交付（后端 + 前端 + Skill + 测试） |
+| `c68c290` | docs+chore: 最终报告、部署产物、lint 清零、SPA 托管 |
+| `ed35990` | feat(A.8): Apple Developer Token、Spotify OAuth URL、真实 Range 中继 |
+
+- 独立验证（GitHub REST API）：`GET /repos/engernages-lab/03/commits/main` →
+  `ed35990a5a8c…`（与本地 HEAD 一致）；`git/trees/main?recursive=1` → **187 个文件**。
+- 安全审计（对已推送的树）：不含 `.env`、`*.p8`、`*.pem`、`.venv`、`node_modules`、
+  `__pycache__`、`data/`、各类缓存目录；`.env.example` 按预期包含。
 
 ## 14. 公开部署地址
 
@@ -221,8 +233,9 @@ https://github.com/engernages-lab/03
 **CONDITIONAL 的部分**：
 
 - 公网部署未执行（无托管凭据）；
-- GitHub Push 未执行（待用户授权）；
 - Apple Music / Spotify / Navidrome 真实账号联调缺失（无凭据/实例）；
 - 网易云、QQ 音乐无官方接口，按政策如实标注不可用。
+
+**已完成的部分**：GitHub Push 已按用户授权执行并验证（§13）。
 
 **FAIL 判定不成立**：核心功能不存在严重缺陷，所有未完成项均已明确记录且不谎报。
