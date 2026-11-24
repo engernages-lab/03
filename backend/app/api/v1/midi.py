@@ -80,9 +80,12 @@ def export_midi(document_id: str, db: Session = Depends(get_db)) -> Response:
     # Header values must be latin-1 safe. Note that str.isalnum() is True for CJK,
     # so a character-class regex is required here - not isalnum().
     ascii_name = re.sub(r"[^A-Za-z0-9._-]+", "_", document.title or "score").strip("_")[:40] or "score"
+    # Keep the f-string expressions simple: backslashes are not allowed inside
+    # f-string expressions before Python 3.12.
+    utf8_name = f"{document.title or 'score'}.mid"
     disposition = (
         f'attachment; filename="{ascii_name}.mid"; '
-        f"filename*=UTF-8''{quote(f'{document.title or \"score\"}.mid')}"
+        f"filename*=UTF-8''{quote(utf8_name)}"
     )
     return Response(
         content=payload,

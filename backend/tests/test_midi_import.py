@@ -269,3 +269,22 @@ def test_api_export_downloads_midi(client):
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("audio/midi")
     assert response.content[:4] == b"MThd"
+
+
+def test_api_export_handles_cjk_title(client):
+    """Regression: str.isalnum() is True for CJK, which used to leak non-latin-1
+    characters into the Content-Disposition header and crash with a 500."""
+    data = build_midi_bytes([(60, 0, 1, 90)])
+    created = client.post(
+        "/api/v1/midi/import",
+        files={"file": ("demo.mid", data, "audio/midi")},
+        params={"title": "中文标题·测试"},
+    ).json()
+
+    response = client.get(f"/api/v1/midi/{created['document_id']}/export")
+    assert response.status_code == 200
+    assert response.content[:4] == b"MThd"
+    disposition = response.headers["content-disposition"]
+    # header stays latin-1 safe, UTF-8 name travels via RFC 5987
+    assert "filename*=UTF-8''" in disposition
+    assert disposition.isascii()
