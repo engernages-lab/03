@@ -1,8 +1,23 @@
 import { defineConfig, devices } from "@playwright/test";
+import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = __dirname;
-const PYTHON = path.join(ROOT, "backend", ".venv", "Scripts", "python.exe");
+
+/**
+ * Resolve the backend interpreter: prefer the project virtualenv, otherwise
+ * fall back to the interpreter on PATH (CI installs dependencies globally).
+ */
+function resolvePython(): string {
+  const venv =
+    process.platform === "win32"
+      ? path.join(ROOT, "backend", ".venv", "Scripts", "python.exe")
+      : path.join(ROOT, "backend", ".venv", "bin", "python");
+  if (fs.existsSync(venv)) return venv;
+  return process.platform === "win32" ? "python" : "python3";
+}
+
+const PYTHON = resolvePython();
 
 /**
  * When ``PSC_BASE_URL`` is set the suite runs against an already-running server
