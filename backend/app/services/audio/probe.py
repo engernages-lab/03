@@ -8,7 +8,6 @@ silent fallbacks that pretend a file was analysed.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import shutil

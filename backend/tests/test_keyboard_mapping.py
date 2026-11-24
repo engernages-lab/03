@@ -6,8 +6,8 @@ import pytest
 
 from app.core.errors import ValidationAppError
 from app.schemas.keyboard import (
-    KeyDefinition,
     KeyboardLayout,
+    KeyDefinition,
     chroma_layout,
     default_layout,
     folded_layout,
@@ -15,7 +15,6 @@ from app.schemas.keyboard import (
 from app.schemas.music_document import empty_document
 from app.services import music_document as core
 from app.services.keyboard.mapping import KeyboardMappingEngine, apply_layout, pitch_name
-
 
 # ---------------------------------------------------------------------------
 # mapping engine

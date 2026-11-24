@@ -79,6 +79,8 @@ def _extract_artwork(path: Path) -> Optional[Tuple[bytes, str]]:
         from mutagen.id3 import ID3
         from mutagen.mp4 import MP4
         from mutagen.oggvorbis import OggVorbis
+
+        _ = mutagen  # presence check only
     except ImportError:  # pragma: no cover
         return None
 

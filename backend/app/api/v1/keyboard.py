@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.schemas.keyboard import KeyboardLayout, default_layout
+from app.schemas.keyboard import KeyboardLayout
 from app.services.keyboard import repository
 
 router = APIRouter()

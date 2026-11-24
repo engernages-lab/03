@@ -70,12 +70,10 @@ class EditOperation(BaseModel):
             raise ValueError("op move_note requires key_id")
         if self.op == "add_note" and self.pitch is None:
             raise ValueError("op add_note requires pitch")
-        if self.op in ("add_note", "add_rest"):
-            if self.start_time is None or self.duration is None:
-                raise ValueError(f"op {self.op} requires start_time and duration")
-        if self.op == "set_time_signature":
-            if self.numerator is None or self.denominator is None:
-                raise ValueError("op set_time_signature requires numerator and denominator")
+        if self.op in ("add_note", "add_rest") and (self.start_time is None or self.duration is None):
+            raise ValueError(f"op {self.op} requires start_time and duration")
+        if self.op == "set_time_signature" and (self.numerator is None or self.denominator is None):
+            raise ValueError("op set_time_signature requires numerator and denominator")
         if self.op == "set_tempo" and self.tempo is None:
             raise ValueError("op set_tempo requires tempo")
         if self.op == "set_layout" and self.layout is None:

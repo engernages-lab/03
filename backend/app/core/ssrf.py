@@ -47,15 +47,7 @@ class ValidatedUrl:
 def _is_blocked_ip(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     if address in METADATA_IPS:
         return True
-    if (
-        address.is_loopback
-        or address.is_link_local
-        or address.is_multicast
-        or address.is_reserved
-        or address.is_unspecified
-    ):
-        return True
-    return False
+    return bool(address.is_loopback or address.is_link_local or address.is_multicast or address.is_reserved or address.is_unspecified)
 
 
 def _is_private_ip(address) -> bool:

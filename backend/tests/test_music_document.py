@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from app.core.errors import ValidationAppError
+from app.core.errors import NotFoundError, ValidationAppError
 from app.schemas.music_document import (
     MusicDocument,
     NoteEvent,
@@ -24,7 +24,6 @@ from app.services.music_document.serialization import (
     document_to_json,
     migrate,
 )
-
 
 # ---------------------------------------------------------------------------
 # construction
@@ -244,8 +243,9 @@ def test_add_event_rejects_invalid_time():
 
 def test_add_event_rejects_unknown_track():
     document = empty_document()
-    with pytest.raises(Exception):
+    with pytest.raises(NotFoundError) as exc:
         core.add_event(document, pitch=60, start_time=0.0, duration=1.0, track_id="ghost")
+    assert exc.value.code == "DOCUMENT_TRACK_MISSING"
 
 
 # ---------------------------------------------------------------------------

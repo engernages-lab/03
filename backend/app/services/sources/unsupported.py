@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Optional
 
 from app.services.sources.base import (
     ConnectionResult,
-    ConnectionResult as _ConnectionResult,
     PageResult,
     PlaylistDTO,
     SourceAdapter,

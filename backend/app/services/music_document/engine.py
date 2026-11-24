@@ -22,7 +22,6 @@ from app.schemas.music_document import (
 from app.services.keyboard.mapping import KeyboardMappingEngine
 from app.services.music_document.timing import beats_to_seconds, locate_beat
 
-
 # ---------------------------------------------------------------------------
 # invariants
 # ---------------------------------------------------------------------------
@@ -46,7 +45,7 @@ def detect_chords(document: MusicDocument) -> None:
         key = (event.track_id, round(event.start_time, 6))
         buckets.setdefault(key, []).append(event)
 
-    for (track_id, start), events in buckets.items():
+    for (_track_id, _start), events in buckets.items():
         if len(events) >= 2:
             chord_id = events[0].chord_id or new_id("ch_")
             for event in events:

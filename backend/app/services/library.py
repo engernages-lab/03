@@ -26,43 +26,41 @@ from app.models.source import (
     PlaybackHistoryRecord,
     PlaylistTrackRecord,
     TranscriptionJobRecord,
-    UnifiedAlbumRecord,
-    UnifiedArtistRecord,
     UnifiedPlaylistRecord,
     UnifiedTrackRecord,
 )
 from app.schemas.music_document import new_id
-from app.services.sources.base import PageResult, TrackDTO
+from app.services.sources.base import TrackDTO
 
 logger = get_logger("pocketscore.library")
 
 LOCAL_SOURCE_ID = "local"
 
 DEFAULT_PERMISSIONS = {
-    "local": dict(
-        metadata_access=True, playback_access=True, audio_read_access=True,
-        ai_processing_permission=False, model_training_permission=False,
-    ),
-    "subsonic": dict(
-        metadata_access=True, playback_access=True, audio_read_access=True,
-        ai_processing_permission=False, model_training_permission=False,
-    ),
-    "apple_music": dict(
-        metadata_access=True, playback_access=True, audio_read_access=False,
-        ai_processing_permission=False, model_training_permission=False,
-    ),
-    "spotify": dict(
-        metadata_access=True, playback_access=True, audio_read_access=False,
-        ai_processing_permission=False, model_training_permission=False,
-    ),
-    "netease": dict(
-        metadata_access=False, playback_access=False, audio_read_access=False,
-        ai_processing_permission=False, model_training_permission=False,
-    ),
-    "qqmusic": dict(
-        metadata_access=False, playback_access=False, audio_read_access=False,
-        ai_processing_permission=False, model_training_permission=False,
-    ),
+    "local": {
+        "metadata_access": True, "playback_access": True, "audio_read_access": True,
+        "ai_processing_permission": False, "model_training_permission": False,
+    },
+    "subsonic": {
+        "metadata_access": True, "playback_access": True, "audio_read_access": True,
+        "ai_processing_permission": False, "model_training_permission": False,
+    },
+    "apple_music": {
+        "metadata_access": True, "playback_access": True, "audio_read_access": False,
+        "ai_processing_permission": False, "model_training_permission": False,
+    },
+    "spotify": {
+        "metadata_access": True, "playback_access": True, "audio_read_access": False,
+        "ai_processing_permission": False, "model_training_permission": False,
+    },
+    "netease": {
+        "metadata_access": False, "playback_access": False, "audio_read_access": False,
+        "ai_processing_permission": False, "model_training_permission": False,
+    },
+    "qqmusic": {
+        "metadata_access": False, "playback_access": False, "audio_read_access": False,
+        "ai_processing_permission": False, "model_training_permission": False,
+    },
 }
 
 
@@ -174,7 +172,7 @@ def update_permissions(session: Session, source_id: str, **values: bool) -> Musi
 
 def track_pk(source_id: str, external_id: str) -> str:
     """Stable internal track id derived from source + external id."""
-    return hashlib.sha1(f"{source_id}:{external_id}".encode("utf-8")).hexdigest()[:24]
+    return hashlib.sha1(f"{source_id}:{external_id}".encode()).hexdigest()[:24]
 
 
 def _normalise(text: str) -> str:

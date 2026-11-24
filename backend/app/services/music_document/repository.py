@@ -14,8 +14,8 @@ from app.schemas.keyboard import KeyboardLayout
 from app.schemas.music_document import (
     MusicDocument,
     MusicTrack,
-    NoteEvent,
     NotationSettings,
+    NoteEvent,
     SourceMetadata,
     TimeSignature,
 )

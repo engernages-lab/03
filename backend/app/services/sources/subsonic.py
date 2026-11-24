@@ -245,14 +245,16 @@ class SubsonicAdapter(SourceAdapter):
 
     async def fetch_stream_bytes(self, external_track_id: str):
         query = {**self._auth_params(), "id": external_track_id}
-        async with self._client() as client:
-            async with client.stream("GET", "/rest/stream.view", params=query) as response:
-                if response.status_code in (401, 403):
-                    raise ProviderAuthError("stream was rejected by the server")
-                if response.status_code >= 400:
-                    raise ProviderError(f"server returned HTTP {response.status_code}")
-                async for chunk in response.aiter_bytes(64 * 1024):
-                    yield chunk
+        async with (
+            self._client() as client,
+            client.stream("GET", "/rest/stream.view", params=query) as response,
+        ):
+            if response.status_code in (401, 403):
+                raise ProviderAuthError("stream was rejected by the server")
+            if response.status_code >= 400:
+                raise ProviderError(f"server returned HTTP {response.status_code}")
+            async for chunk in response.aiter_bytes(64 * 1024):
+                yield chunk
 
     # -- mapping -----------------------------------------------------------
     def _track_dto(self, raw: Dict[str, Any]) -> TrackDTO:

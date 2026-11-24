@@ -7,15 +7,14 @@ import io
 import pytest
 
 from app.core.errors import ValidationAppError
+from app.schemas.music_document import empty_document
+from app.services import music_document as core
 from app.services.midi.exporter import document_to_midi_bytes
 from app.services.midi.importer import (
     import_midi_bytes,
     inspect_midi,
     parse_midi,
-    parse_result_to_document,
 )
-from app.schemas.music_document import empty_document
-from app.services import music_document as core
 
 
 def build_midi_bytes(

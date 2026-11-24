@@ -7,6 +7,7 @@ text and must never be returned by the API.
 from __future__ import annotations
 
 import base64
+import contextlib
 import os
 from pathlib import Path
 from typing import Optional
@@ -52,10 +53,8 @@ def _machine_key(storage_path: Path) -> str:
 
     key = Fernet.generate_key().decode()
     key_file.write_text(key, encoding="utf-8")
-    try:
+    with contextlib.suppress(OSError):  # chmod is a no-op on Windows
         os.chmod(key_file, 0o600)
-    except OSError:  # pragma: no cover - Windows
-        pass
     logger.warning("generated a local token encryption key at %s", key_file)
     return key
 

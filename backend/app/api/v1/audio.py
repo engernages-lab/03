@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
@@ -15,7 +15,8 @@ from app.core.db import get_db
 from app.core.errors import ValidationAppError
 from app.models.audio import AudioAssetRecord
 from app.schemas.common import Page
-from app.services.audio import assets, probe as probe_service
+from app.services.audio import assets
+from app.services.audio import probe as probe_service
 
 router = APIRouter()
 

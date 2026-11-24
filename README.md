@@ -13,16 +13,18 @@
 | 阶段 | 内容 | 状态 |
 | --- | --- | --- |
 | A.1 | 工程架构（前后端分离、配置、日志、错误、DB、健康检查） | ✅ 完成 |
-| A.2 | 六大 AI Skill 文件与交叉依赖 | ⏳ |
-| A.3 | MusicDocument 核心数据引擎 | ⏳ |
-| A.4 | 自定义口袋键盘系统 | ⏳ |
-| A.5 | MIDI 与音频输入基础 | ⏳ |
-| A.6 | 格子谱引擎 | ⏳ |
-| A.7 | 数字谱与双格式同步 | ⏳ |
-| A.8 | 多音源音乐中心与完整播放器 | ⏳ |
-| A.9 | 数据库、测试与部署 | ⏳ |
+| A.2 | 六大 AI Skill 文件与交叉依赖 | ✅ 完成 |
+| A.3 | MusicDocument 核心数据引擎 | ✅ 完成 |
+| A.4 | 自定义口袋键盘系统 | ✅ 完成 |
+| A.5 | MIDI 与音频输入基础 | ✅ 完成 |
+| A.6 | 格子谱引擎 | ✅ 完成 |
+| A.7 | 数字谱与双格式同步 | ✅ 完成 |
+| A.8 | 多音源音乐中心与完整播放器 | ✅ 完成（外部平台按真实授权情况交付，见报告） |
+| A.9 | 数据库、测试与部署 | ✅ 完成（公网部署与 Push 待用户授权，见报告） |
 
-阶段报告见 [`docs/reports/`](docs/reports/)。
+**测试现状**：后端 `pytest` **215 passed** · 前端 `vitest` **39 passed** · 端到端 `playwright` **6 passed**
+
+阶段报告见 [`docs/reports/`](docs/reports/)，界面截图见 [`docs/screenshots/`](docs/screenshots/)。
 
 ---
 
@@ -124,8 +126,19 @@ npm run dev
 
 - [架构总览](docs/architecture/system-overview.md)
 - [API 约定](docs/api/conventions.md)
+- [部署指南](docs/deployment.md)
 - [阶段报告](docs/reports/)
+- [界面截图](docs/screenshots/)
 - 六大 Skill：[`.agents/skills/`](.agents/skills/)
+
+## 6.1 一键验证
+
+```powershell
+.\scripts\test.ps1      # 后端 pytest + 前端 vitest
+.\scripts\check.ps1     # ruff + tsc
+python scripts/make_fixtures.py   # 生成 E2E 用的 sample.mid / tone.wav
+npx playwright test     # 端到端（需先构建 frontend 或启动 vite）
+```
 
 ---
 

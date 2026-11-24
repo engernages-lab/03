@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.core.errors import ValidationAppError
-from app.schemas.keyboard import chroma_layout, default_layout
+from app.schemas.keyboard import chroma_layout
 from app.schemas.music_document import TimeSignature, empty_document
 from app.services import music_document as core
 from app.services.notation.grid import REST_KEY_ID, compile_grid

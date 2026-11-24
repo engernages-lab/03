@@ -12,7 +12,6 @@ import json
 import os
 import time
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlencode
 
 import httpx
 
@@ -85,7 +84,7 @@ class AppleMusicAdapter(SourceAdapter):
             raise ProviderError(
                 f"私钥文件不存在：{self.private_key_path}", code="PROVIDER_NOT_CONFIGURED", status_code=501
             )
-        with open(self.private_key_path, "r", encoding="utf-8") as handle:
+        with open(self.private_key_path, encoding="utf-8") as handle:
             return handle.read()
 
     def developer_token(self) -> str:
@@ -192,7 +191,7 @@ class AppleMusicAdapter(SourceAdapter):
                     external_id=raw.get("id") or "",
                     name=attributes.get("name") or "",
                     description=(attributes.get("description") or {}).get("standard") or "",
-                    track_count=int((attributes.get("trackCount") or 0)),
+                    track_count=int(attributes.get("trackCount") or 0),
                     is_user_owned=True,
                     metadata={"canEdit": attributes.get("canEdit")},
                 )

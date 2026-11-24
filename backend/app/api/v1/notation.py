@@ -2,21 +2,19 @@
 
 from __future__ import annotations
 
-import io
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.v1.documents import _summary
 from app.core.db import get_db
 from app.schemas.keyboard import KeyboardLayout
 from app.schemas.music_document import MusicDocument
+from app.services.keyboard.repository import get_layout as load_layout
 from app.services.music_document import repository
 from app.services.notation.grid import GridViewModel, compile_grid
 from app.services.notation.jianpu import JianpuViewModel, compile_jianpu
-from app.services.keyboard.repository import get_layout as load_layout
 
 router = APIRouter()
 

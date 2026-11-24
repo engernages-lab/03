@@ -9,7 +9,9 @@ ignore = [
     "B008",   # FastAPI Depends() in defaults is idiomatic
     "E501",   # line length handled by formatter
     "UP006",  # typing.List vs list is intentional for py39 runtime annotations
+    "UP007",  # Optional[X] must stay: Pydantic/SQLAlchemy evaluate annotations on py3.9
     "UP035",
+    "UP037",  # quoted annotations are required for py3.9 forward references
 ]
 
 [tool.ruff.lint.per-file-ignores]

@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from app.core.errors import ValidationAppError
 from app.schemas.keyboard import KeyboardLayout
-from app.schemas.music_document import EPSILON, MusicDocument, NoteEvent
+from app.schemas.music_document import MusicDocument
 from app.services.keyboard.mapping import KeyboardMappingEngine, pitch_name
 from app.services.music_document.timing import beats_per_measure, duration_in_slots, measure_start
 

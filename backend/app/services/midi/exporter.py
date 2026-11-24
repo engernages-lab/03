@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-from typing import Dict
 
 from app.core.errors import DependencyMissingError
 from app.schemas.music_document import MusicDocument

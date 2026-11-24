@@ -7,7 +7,7 @@ playback history, per-source permissions and transcription jobs.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from sqlalchemy import (
     Boolean,

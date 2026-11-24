@@ -7,7 +7,6 @@ hard-coded and ``.env`` is git-ignored.
 
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional
@@ -116,6 +115,10 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment.lower() in {"production", "prod"}
+
+    @property
+    def is_test(self) -> bool:
+        return self.environment.lower() == "test"
 
     @property
     def max_upload_bytes(self) -> int:

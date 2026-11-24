@@ -133,8 +133,9 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(settings.storage_path)), name="static")
 
     # Optional: serve the built SPA from the same origin (single-service deploy).
+    # Disabled under test so API 404 behaviour stays observable.
     dist = PROJECT_ROOT / "frontend" / "dist"
-    if settings.serve_frontend and dist.is_dir():
+    if settings.serve_frontend and not settings.is_test and dist.is_dir():
         from fastapi.responses import FileResponse
 
         assets = dist / "assets"
@@ -144,6 +145,8 @@ def create_app() -> FastAPI:
 
         @app.get("/{full_path:path}", include_in_schema=False)
         def spa(full_path: str):  # pragma: no cover - static hosting
+            if full_path.startswith(("api/", "static/", "assets/", "docs", "openapi.json", "redoc")):
+                raise StarletteHTTPException(status_code=404, detail="Not Found")
             candidate = (dist / full_path).resolve()
             if full_path and dist in candidate.parents and candidate.is_file():
                 return FileResponse(candidate)
