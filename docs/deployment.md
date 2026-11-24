@@ -111,10 +111,27 @@ alembic revision --autogenerate -m "describe change"   # 改表后生成迁移
 | 项 | 状态 |
 | --- | --- |
 | 本地生产模式（单服务） | ✅ 已实测通过（`/`、`/scores`、`/api/v1/health`、`/docs` 均 200） |
+| 生产构建产物端到端测试 | ✅ 6/6 通过（`PSC_BASE_URL=http://127.0.0.1:8001 npx playwright test`） |
 | Docker 镜像构建 | ⚠️ 未实际构建（本机无 Docker） |
 | 公网部署 | ❌ **未执行** —— 需要用户的托管账号/域名与凭据 |
-| GitHub Push | ❌ **未执行** —— 按任务书要求需用户授权 |
+| GitHub Push | ✅ 已执行并验证（`main @ a0bfd06`） |
+
+### 部署前自验（不改代码即可复跑）
+
+```powershell
+# 1) 构建产物
+cd frontend; npm run build; cd ..
+
+# 2) 用生产环境变量启动（同时托管 SPA）
+cd backend
+$env:POCKETSCORE_ENVIRONMENT="production"
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+
+# 3) 另一终端：对生产包跑端到端
+$env:PSC_BASE_URL="http://127.0.0.1:8001"
+npx playwright test tests/e2e/workstation.spec.ts
+```
 
 > 任务书要求"不能只提供本地地址并称为公开部署完成"。因此本报告明确标注：
-> **公网部署尚未完成**，只完成了可部署产物与本地生产模式验证。
+> **公网部署尚未完成**，只完成了可部署产物与本地生产模式（含生产包 E2E）验证。
 > 提供托管账号（Render/Fly/Vercel 任一）与仓库 Push 权限后即可执行。

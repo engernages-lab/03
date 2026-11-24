@@ -139,13 +139,15 @@ React SPA ──/api/v1──► FastAPI 路由层（Pydantic 校验）
 | 层级 | 工具 | 结果 |
 | --- | --- | --- |
 | 后端单元+集成 | Pytest | **229 passed**（24.2s） |
-| 前端单元 | Vitest | **39 passed**（5 文件） |
-| 端到端 | Playwright Chromium | **6 passed**（10.2s） |
+| 前端单元 | Vitest | **46 passed**（6 文件） |
+| 端到端（dev server） | Playwright Chromium | **6 passed**（10.2s） |
+| 端到端（生产构建产物） | Playwright → FastAPI:8001 | **6 passed**（9.4s） |
 | 静态检查 | Ruff | **All checks passed** |
 | 类型检查 | `tsc --noEmit` | **exit 0** |
-| 生产构建 | `vite build` | 成功（JS 351 kB / gzip 105 kB） |
+| 生产构建 | `vite build` | 成功（JS 354 kB / gzip 106 kB） |
 | 生产模式 | uvicorn + dist | `/`、`/scores`、`/keyboard`→HTML；`/api/v1/health`→JSON；`/api/v1/nope`→404 JSON |
-| 合计 | — | **274 项自动化测试通过** |
+| 辅助脚本 | `test.ps1` / `check.ps1` | 均 exit 0 |
+| 合计 | — | **281 项自动化测试通过** |
 
 ## 12. 安全检查
 
@@ -208,16 +210,15 @@ https://github.com/engernages-lab/03
 5. 变音拼写默认升号，可配置 `flat`。
 6. 撤销栈仅前端，刷新后清空（文档本身已持久化）。
 7. 多轨数字谱合并显示，未做声部分行。
-8. 本地"文件夹授权扫描"未实现（当前为文件选择上传）。
-9. Subsonic 播放代理未做 Range 透传。
-10. Docker 镜像未实际构建（本机无 Docker）。
+8. Subsonic 播放代理已支持 Range 中继；HLS/转码流未验证。
+9. Docker 镜像未实际构建（本机无 Docker）。
 
 ## 16. 下一阶段计划（V1.0-B）
 
 1. 接入真实扒谱模型（音高/节奏识别），输出带 `confidence` 的候选事件，人工确认后写入文档。
 2. 补齐 Apple Music（MusicKit 前端）与 Spotify 真机联调。
 3. 数字谱声部分行、拖拽编辑、连音符号合并。
-4. 本地目录授权扫描（File System Access API）。
+4. 播放器转向更完整的媒体会话/系统媒体键支持（Media Session API）。
 5. 多速度（tempo map）编辑与显示。
 6. 部署到正式环境 + 域名 + HTTPS + 备份策略。
 

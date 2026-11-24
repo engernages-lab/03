@@ -78,12 +78,13 @@ $ .\.venv\Scripts\python.exe -m pytest
 
 ```text
 $ npx vitest run
- Test Files  5 passed (5)
-      Tests  39 passed (39)
+ Test Files  6 passed (6)
+      Tests  46 passed (46)
 ```
 
 - `api.test.ts` 6：错误信封解包、网络错误、204、URL 构建。
 - `format.test.ts` 8：时长/字节/相对时间/钳制。
+- `folderImport.test.ts` 7：扩展名判定、目录选择过滤、顺序上传与失败续传。
 - `player.test.ts` 18：下一首/上一首/随机/循环/音量/队列状态机。
 - `document.test.ts` 6：撤销/重做/上限 50/新编辑清空 redo。
 - `DashboardPage.test.tsx` 2：真实数据渲染 + 后端离线提示。
@@ -106,6 +107,26 @@ $ npx playwright test
 切换数字谱 → 修改音符 → 检查同步 → 保存项目 → 重新打开 → 导出谱面。
 
 其中「导出谱面」通过真实 `GET /notation/{id}/grid.svg` 断言返回 `<svg>`。
+
+### 2.3.1 生产构建产物的 E2E（部署前验证）
+
+同一套 6 个用例额外针对**构建产物**（FastAPI 托管 `frontend/dist`，`POCKETSCORE_ENVIRONMENT=production`，
+端口 8001）再跑一遍：
+
+```text
+$ npx vite build                     → ✓ built in 3.94s
+$ PSC_BASE_URL=http://127.0.0.1:8001 npx playwright test tests/e2e/workstation.spec.ts
+  ok 1 工作台展示真实系统状态与能力探测
+  ok 2 导入本地音乐 → 播放 → 检查扒谱资格 → 进入分析输入
+  ok 3 导入 MIDI → 生成格子谱 → 切换数字谱 → 编辑音符并保持同步
+  ok 4 保存的谱面可以重新打开并保留数据
+  ok 5 键盘布局编辑器可以修改键位并影响谱面
+  ok 6 音乐来源页如实标注各平台可用性
+  6 passed (9.4s)
+```
+
+说明：`playwright.config.ts` 支持 `PSC_BASE_URL`，设置后不启动开发服务器，直接打生产包。
+这条链路证明**可部署工件本身可用**，不是只在 dev server 上能跑。
 
 ### 2.4 静态检查
 
@@ -171,7 +192,7 @@ $ python -m ruff check app tests        → All checks passed!
 | 前端源码 | 43 个 TS/TSX 文件 / 6,240 行 |
 | API 路由 | 81 条（全部 `/api/v1`） |
 | 数据库表 | 16 张业务表 |
-| 自动化测试 | 229 + 39 + 6 = **274 项通过** |
+| 自动化测试 | 229 + 46 + 6 = **281 项通过** |
 | 文档 | 6 个 Skill + 9 份报告 + 架构/API/部署 3 份指南 + 8 张截图 |
 
 ---

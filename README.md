@@ -22,7 +22,8 @@
 | A.8 | 多音源音乐中心与完整播放器 | ✅ 完成（外部平台按真实授权情况交付，见报告） |
 | A.9 | 数据库、测试与部署 | 🟡 测试与部署产物完成；公网部署待托管凭据（Push 已完成） |
 
-**测试现状**：后端 `pytest` **229 passed** · 前端 `vitest` **39 passed** · 端到端 `playwright` **6 passed**
+**测试现状**：后端 `pytest` **229 passed** · 前端 `vitest` **46 passed** · 端到端 `playwright` **6 passed**
+（dev server 与生产构建产物各跑一遍，合计 **281** 项）
 
 仓库：<https://github.com/engernages-lab/03>（`main`，公开）
 

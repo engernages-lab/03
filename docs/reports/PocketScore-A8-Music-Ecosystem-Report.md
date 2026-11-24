@@ -10,7 +10,7 @@
 
 | 模块 | 状态 | 说明 |
 | --- | --- | --- |
-| 本地音乐上传/索引/播放 | ✅ | 多文件、拖拽、元数据、封面、搜索、收藏、歌单、历史 |
+| 本地音乐上传/索引/播放 | ✅ | 多文件、**文件夹授权（目录选择 + 拖拽递归扫描）**、元数据、封面、搜索、收藏、歌单、历史 |
 | Navidrome / OpenSubsonic | ✅ 协议完整实现 | `ping/getAlbumList2/getArtists/getPlaylists/getPlaylist/search3/getRandomSongs/stream`，MD5 token 认证，MockTransport 全量测试 |
 | Apple Music | 🟡 代码就绪，缺凭据 | Developer Token（ES256 JWT）生成、MusicKit 播放指引、资料库接口；**未做真实账号验证**（无 Apple 开发者凭据） |
 | Spotify | 🟡 仅元数据能力 | OAuth2 + 歌单/收藏/搜索 + 政策硬限制；**未做真实账号验证**（无 Client ID/Secret） |
@@ -115,7 +115,7 @@ $ .\.venv\Scripts\python.exe -m pytest tests/test_library.py tests/test_eligibil
 | 路由 | 内容 |
 | --- | --- |
 | `/dashboard` | 资料库统计、来源状态、能力探测、阶段进度、继续工作 |
-| `/music-library` | 统计卡、搜索、拖拽上传、曲目/专辑/歌手三视图、播放全部 |
+| `/music-library` | 统计卡、搜索、拖拽上传、**文件夹导入**、曲目/专辑/歌手三视图、播放全部 |
 | `/music-favorites` | 收藏列表 |
 | `/music-playlists` | 歌单列表 + 曲目管理 + 新建/删除 |
 | `/music-recent` | 播放历史 + 清空 |
@@ -132,11 +132,13 @@ $ .\.venv\Scripts\python.exe -m pytest tests/test_library.py tests/test_eligibil
 | Apple Music 真实账号测试 | 缺开发者凭据（Team/Key/.p8）与 MusicKit 前端集成；**Token 生成已实现并用真实公钥验签** | 提供凭据后补 |
 | Spotify 真实 OAuth | 缺 Client ID/Secret；**授权 URL 端点已实现**，且政策禁止 AI 分析，仅元数据 | 提供凭据后补 |
 | Navidrome 真实服务器 | 无实例；协议层已按官方 API 实现并 Mock 验证 | 提供地址后可实测 |
-| 本地"文件夹授权扫描" | 当前为“用户选择文件上传”；浏览器目录扫描需 File System Access API | V1.0-B |
 
-> 编排说明：Subsonic 播放代理的 Range 透传已在 A.8 收尾时补齐
-> （`open_stream()` 转发 `Range` 并中继 `206` / `Content-Range` / `Content-Length`，
-> 5 项测试覆盖），不再列为已知缺口。
+> 收尾补齐的两项（已不再列为缺口）：
+> 1. **文件夹授权导入** —— `<input webkitdirectory>` 目录选择 + 拖拽文件夹递归扫描
+>    （`webkitGetAsEntry` 逐层遍历，含 100 条目分批读取），带进度条与失败明细；
+>    非音频文件自动跳过，不会误传。
+> 2. **Subsonic 播放代理 Range 透传** —— `open_stream()` 转发 `Range` 并中继
+>    `206` / `Content-Range` / `Content-Length`，5 项测试覆盖。
 
 ## 11. 验收
 

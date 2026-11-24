@@ -27,6 +27,13 @@ test("导入本地音乐 → 播放 → 检查扒谱资格 → 进入分析输�
   await page.goto("/music-library");
   await expect(page.getByRole("button", { name: /导入本地音乐/ })).toBeVisible();
 
+  // folder authorisation: the picker must expose webkitdirectory-style access
+  await expect(page.getByRole("button", { name: /导入文件夹/ })).toBeVisible();
+  const folderInputCount = await page
+    .locator('input[type="file"][webkitdirectory]')
+    .count();
+  expect(folderInputCount).toBeGreaterThan(0);
+
   // 1. import a local audio file through the hidden file input
   const fileInput = page.locator('input[type="file"][accept*=".wav"]').first();
   await fileInput.setInputFiles(WAV);

@@ -56,6 +56,15 @@ blob-report/
 .playwright/
 coverage/
 *.log
+# pytest temp dirs (basetemp is pinned in backend/pytest.ini)
+pytest-of-*/
+.pytest-tmp/
+backend/pytest-of-*/
+backend/.pytest-tmp/
+
+# ---- Private keys (Apple .p8, TLS certs) ----
+*.p8
+*.p12
 
 # ---- OS / editor ----
 .DS_Store

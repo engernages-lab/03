@@ -4,19 +4,24 @@ $ErrorActionPreference = "Continue"
 $root = Split-Path -Parent $PSScriptRoot
 $failed = @()
 
+function Invoke-Step {
+    param([string]$Label, [scriptblock]$Action)
+    Write-Host "=== $Label ===" -ForegroundColor Cyan
+    & $Action 2>&1 | ForEach-Object { Write-Host $_ }
+    return $LASTEXITCODE
+}
+
 $py = Join-Path $root "backend\.venv\Scripts\python.exe"
 if (Test-Path $py) {
-    Write-Host "=== Ruff ===" -ForegroundColor Cyan
     Push-Location (Join-Path $root "backend")
-    & $py -m ruff check app tests
-    if ($LASTEXITCODE -ne 0) { $failed += "backend:ruff" }
+    $code = Invoke-Step "Ruff" { & $py -m ruff check app tests }
+    if ($code -ne 0) { $failed += "backend:ruff" }
     Pop-Location
 }
 
-Write-Host "=== TypeScript ===" -ForegroundColor Cyan
 Push-Location (Join-Path $root "frontend")
-& npm.cmd run typecheck
-if ($LASTEXITCODE -ne 0) { $failed += "frontend:tsc" }
+$code = Invoke-Step "TypeScript" { & npm.cmd run typecheck }
+if ($code -ne 0) { $failed += "frontend:tsc" }
 Pop-Location
 
 Write-Host ""
@@ -25,3 +30,4 @@ if ($failed.Count -gt 0) {
     exit 1
 }
 Write-Host "静态检查通过" -ForegroundColor Green
+exit 0
