@@ -1,10 +1,18 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import path from "node:path";
 
 // The spec is compiled as CommonJS, so __dirname is tests/e2e.
 const FIXTURES = path.resolve(__dirname, "..", "fixtures");
 const WAV = path.join(FIXTURES, "tone.wav");
 const MIDI = path.join(FIXTURES, "sample.mid");
+
+/** Note count from the compiled score stats ("音符 12"), or -1 when absent. */
+async function noteCount(page: Page): Promise<number> {
+  const text = await page.getByText(/音符 \d+/).first().textContent();
+  const match = text?.match(/音符\s*(\d+)/);
+  return match ? Number(match[1]) : -1;
+}
 
 test.describe.configure({ mode: "serial" });
 
@@ -103,17 +111,12 @@ test("导入 MIDI → 生成格子谱 → 切换数字谱 → 编辑音符并保
   await expect(page.getByText(/音符 \d+/).first()).toBeVisible();
 
   // add a note by clicking an empty grid cell in the first key row
-  const before = await page.locator('text=/音符 \\d+/').first().textContent();
+  const countBefore = await noteCount(page);
   const emptyCell = page.locator('button[title^="点击在第 1 小节写入 C4"]').first();
   await emptyCell.click();
-  await expect(page.getByText(/正在保存|已选音符/)).toBeVisible({ timeout: 15_000 });
-  await page.waitForFunction(
-    (previous) => {
-      const element = document.querySelector("span.badge, div");
-      return Boolean(previous);
-    },
-    before,
-  );
+  // The save is asynchronous, so wait for the observable outcome (compiled
+  // stats) instead of a transient "saving" label.
+  await expect.poll(() => noteCount(page), { timeout: 20_000 }).toBeGreaterThan(countBefore);
 
   // select the newly created note and delete it via toolbar
   const noteCells = page.locator('button[title*="C4 · 第 1 小节"]');
@@ -121,6 +124,7 @@ test("导入 MIDI → 生成格子谱 → 切换数字谱 → 编辑音符并保
   await expect(page.getByText("已选音符")).toBeVisible();
   await page.getByRole("button", { name: /删除音符/ }).click();
   await expect(page.getByText("已选音符")).toHaveCount(0, { timeout: 15_000 });
+  await expect.poll(() => noteCount(page), { timeout: 20_000 }).toBe(countBefore);
 
   // switch to jianpu-only view and back
   await page.getByRole("button", { name: "数字谱", exact: true }).click();
