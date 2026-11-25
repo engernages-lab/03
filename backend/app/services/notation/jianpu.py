@@ -52,6 +52,8 @@ class JianpuNote(BaseModel):
     mapped_key: Optional[str] = None
     key_label: Optional[str] = None
     width: int = 1
+    # V1.1-A: per-note model confidence (None for manual/MIDI events)
+    confidence: Optional[float] = None
     start_time: float = 0.0
     duration: float = 0.0
     beat_in_measure: float = 1.0
@@ -300,6 +302,7 @@ def _build_note(
         mapped_key=key_definition.key_id if key_definition else None,
         key_label=key_definition.label if key_definition else None,
         width=width,
+        confidence=event.confidence,
         start_time=event.start_time,
         duration=event.duration,
         beat_in_measure=event.beat,

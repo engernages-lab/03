@@ -137,6 +137,33 @@ function JobCard({ job }: { job: TranscriptionJob }) {
       )}
       {job.error && <p className="mt-1 text-[10px] text-key-rose">{job.error}</p>}
 
+      {job.pipeline && job.status === "completed" && (
+        <div className="mt-2 rounded border border-studio-800 bg-studio-950/50 px-2 py-1.5 text-[10px] text-studio-400">
+          <p>
+            后处理（{job.pipeline.version ?? "—"}）：模型原始{" "}
+            <b className="text-studio-200">{job.pipeline.raw_notes ?? "—"}</b> 个 →
+            写入 <b className="text-studio-200">{job.pipeline.final_notes ?? "—"}</b> 个
+            {job.pipeline.removed_harmonic ? ` · 泛音抑制 ${job.pipeline.removed_harmonic} 个` : ""}
+            {job.pipeline.split_extra ? ` · 重复音切分 +${job.pipeline.split_extra}` : ""}
+          </p>
+          {job.quality && (
+            <p className="mt-1">
+              平均置信度 {(job.quality.mean_confidence * 100).toFixed(0)}% · 低置信度{" "}
+              {job.quality.low_confidence} 个
+              {job.quality.polyphonic_share > 0.15
+                ? ` · 同时发声 ${(job.quality.polyphonic_share * 100).toFixed(0)}%`
+                : ""}
+            </p>
+          )}
+          {job.quality?.review_hint && (
+            <p className="mt-1 text-key-amber">{job.quality.review_hint}</p>
+          )}
+          <p className="mt-1 text-studio-600">
+            置信度是模型的检测强度，不等于实际准确率；低置信度音符在格子谱上有橙色标记。
+          </p>
+        </div>
+      )}
+
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {job.status === "completed" && job.document_id && (
           <button

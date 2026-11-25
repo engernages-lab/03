@@ -36,6 +36,8 @@ class GridCell(BaseModel):
     pitch: Optional[int] = None
     label: Optional[str] = None
     color: Optional[str] = None
+    # V1.1-A: per-note model confidence (None for manual/MIDI events)
+    confidence: Optional[float] = None
 
 
 class GridRow(BaseModel):
@@ -207,6 +209,7 @@ def compile_grid(
             cell.pitch = event.pitch
             cell.label = target.label
             cell.color = target.color
+            cell.confidence = event.confidence
 
     stats.chords = len(chord_ids)
     if stats.rests == 0:

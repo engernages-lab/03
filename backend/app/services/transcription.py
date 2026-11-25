@@ -147,7 +147,8 @@ def run_job(session: Session, job_id: str) -> TranscriptionJobRecord:
             session.commit()
             return job
 
-        notes = note_extraction.transcribe_file(path)
+        result = note_extraction.transcribe_result(path)
+        notes = result.notes
 
         job.status = "postprocessing"
         job.progress = 85
@@ -182,13 +183,26 @@ def run_job(session: Session, job_id: str) -> TranscriptionJobRecord:
         job.events_produced = len(notes)
         job.method = note_extraction.MODEL_ID
         job.confidence = round(
-            sum(note.amplitude for note in notes) / len(notes), 4
+            sum((note.confidence or note.amplitude) for note in notes) / len(notes), 4
+        )
+        # keep the pre/post-processing comparison so the UI can show what the
+        # post-processing changed (never presented as accuracy)
+        job.analysis_json = json.dumps(
+            {
+                **analysis,
+                "pipeline": result.stats,
+                "raw_notes": len(result.raw),
+                "final_notes": len(result.notes),
+                "postprocess_version": "V1.1-A",
+            },
+            ensure_ascii=False,
         )
         job.status = "completed"
         job.progress = 100
         warnings.append(
-            f"{note_extraction.MODEL_NAME} {note_extraction.MODEL_VERSION} 识别出 {len(notes)} 个音符，"
-            "已写入 MusicDocument；复音与多乐器精度有限，请在谱面中人工校对。"
+            f"{note_extraction.MODEL_NAME} {note_extraction.MODEL_VERSION} 识别出 {len(result.raw)} 个候选音符，"
+            f"后处理（泛音抑制/重复音切分/合并）后写入 {len(notes)} 个；"
+            "复音与快速乐句精度有限，请在谱面中人工校对。"
         )
         job.warnings_json = json.dumps(warnings, ensure_ascii=False)
         session.commit()
@@ -222,6 +236,9 @@ def cancel_job(session: Session, job_id: str) -> TranscriptionJobRecord:
 
 
 def job_to_dict(job: TranscriptionJobRecord) -> Dict[str, Any]:
+    analysis = json.loads(job.analysis_json) if job.analysis_json else None
+    pipeline = (analysis or {}).get("pipeline") or {}
+    quality = pipeline.get("quality") or {}
     return {
         "job_id": job.id,
         "document_id": job.document_id,
@@ -233,7 +250,18 @@ def job_to_dict(job: TranscriptionJobRecord) -> Dict[str, Any]:
         "method": job.method,
         "confidence": job.confidence,
         "events_produced": job.events_produced,
-        "analysis": json.loads(job.analysis_json) if job.analysis_json else None,
+        "analysis": analysis,
+        # V1.1-A: what the post-processing changed and how reliable it looks
+        "quality": quality or None,
+        "pipeline": {
+            "version": (analysis or {}).get("postprocess_version"),
+            "raw_notes": (analysis or {}).get("raw_notes"),
+            "final_notes": (analysis or {}).get("final_notes"),
+            "removed_harmonic": pipeline.get("removed_harmonic"),
+            "split_extra": pipeline.get("split_extra"),
+        }
+        if pipeline
+        else None,
         "warnings": json.loads(job.warnings_json) if job.warnings_json else [],
         "error": job.error,
         "created_at": utc_iso(job.created_at),

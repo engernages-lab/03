@@ -114,6 +114,8 @@ class MusicEventRecord(Base):
     kind: Mapped[str] = mapped_column(String(8), default="note", nullable=False)
     chord_id: Mapped[Optional[str]] = mapped_column(String(48), nullable=True)
     tie_group: Mapped[Optional[str]] = mapped_column(String(48), nullable=True)
+    # V1.1-A: model confidence for transcribed notes (NULL for manual/MIDI)
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     document: Mapped[MusicDocumentRecord] = relationship(back_populates="events")
 

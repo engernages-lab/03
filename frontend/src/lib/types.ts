@@ -225,6 +225,7 @@ export interface GridCell {
   pitch: number | null;
   label: string | null;
   color: string | null;
+  confidence?: number | null;
 }
 
 export interface GridRow {
@@ -555,6 +556,23 @@ export interface AnalysisResult {
   warnings: string[];
 }
 
+export interface TranscriptionQuality {
+  notes: number;
+  mean_confidence: number;
+  low_confidence: number;
+  low_confidence_ratio: number;
+  polyphonic_share: number;
+  review_hint: string;
+}
+
+export interface TranscriptionPipeline {
+  version: string | null;
+  raw_notes: number | null;
+  final_notes: number | null;
+  removed_harmonic: number | null;
+  split_extra: number | null;
+}
+
 export interface TranscriptionJob {
   job_id: string;
   document_id: string | null;
@@ -575,6 +593,8 @@ export interface TranscriptionJob {
   confidence: number;
   events_produced: number;
   analysis: AnalysisResult | null;
+  quality?: TranscriptionQuality | null;
+  pipeline?: TranscriptionPipeline | null;
   warnings: string[];
   error: string | null;
   created_at: string | null;

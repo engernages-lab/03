@@ -83,6 +83,7 @@ def save_document(session: Session, document: MusicDocument, *, create: bool = T
                 kind=event.kind,
                 chord_id=event.chord_id,
                 tie_group=event.tie_group,
+                confidence=event.confidence,
             )
         )
     session.commit()
@@ -135,6 +136,7 @@ def load_document(session: Session, document_id: str) -> MusicDocument:
             kind=e.kind,
             chord_id=e.chord_id,
             tie_group=e.tie_group,
+            confidence=e.confidence,
         )
         for e in sorted(record.events, key=lambda e: (e.start_time, e.pk))
     ]

@@ -188,7 +188,9 @@ def test_silence_produces_no_notes(tmp_path):
 
 
 def test_missing_model_raises_instead_of_faking(monkeypatch):
-    monkeypatch.setattr(note_extraction, "_load_module", lambda: None)
+    from app.services.audio.transcription import inference
+
+    monkeypatch.setattr(inference, "load_module", lambda: None)
     assert note_extraction.model_status()["available"] is False
     with pytest.raises(RuntimeError):
         note_extraction.transcribe_file(Path("does-not-exist.wav"))

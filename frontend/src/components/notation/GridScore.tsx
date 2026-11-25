@@ -12,6 +12,8 @@ export interface GridScoreProps {
 }
 
 const ROW_HEIGHT = 30;
+/** Transcribed notes below this confidence get a "review me" marker. */
+const LOW_CONFIDENCE = 0.55;
 
 export function GridScore({
   view,
@@ -27,6 +29,16 @@ export function GridScore({
   const rows: GridRow[] = useMemo(
     () => (view.rest_row ? [...view.rows, view.rest_row] : view.rows),
     [view.rows, view.rest_row],
+  );
+
+  const hasLowConfidence = useMemo(
+    () =>
+      view.rows.some((row) =>
+        row.cells.some(
+          (cell) => cell.state === "note" && cell.confidence != null && cell.confidence < LOW_CONFIDENCE,
+        ),
+      ),
+    [view.rows],
   );
 
   const beatToStart = (cell: GridCell) => {
@@ -74,6 +86,16 @@ export function GridScore({
           </div>
         </div>
 
+        {hasLowConfidence && (
+          <div
+            data-testid="low-confidence-legend"
+            className="flex items-center gap-1.5 border-b border-studio-800/60 bg-studio-950/40 px-2 py-1 text-[10px] text-studio-500"
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-key-amber" aria-hidden />
+            橙色圆点 = AI 识别置信度偏低（&lt; 55%），建议人工校对；置信度不等于实际准确率
+          </div>
+        )}
+
         {rows.map((row) => (
           <div key={row.key_id} className="flex items-stretch border-b border-studio-800/50 last:border-0">
             <div
@@ -105,7 +127,11 @@ export function GridScore({
                     onClick={() => handleCellClick(row, cell)}
                     title={
                       cell.event_id
-                        ? `${row.label} · 第 ${cell.measure} 小节`
+                        ? `${row.label} · 第 ${cell.measure} 小节${
+                            cell.confidence != null
+                              ? ` · 置信度 ${(cell.confidence * 100).toFixed(0)}%`
+                              : ""
+                          }`
                         : `点击在第 ${cell.measure} 小节写入 ${row.label}`
                     }
                     style={{ width: cellWidth, height: ROW_HEIGHT }}
@@ -129,6 +155,13 @@ export function GridScore({
                           borderColor: selected ? "#ffffff" : "transparent",
                           opacity: 0.9,
                         }}
+                      />
+                    )}
+                    {isNote && cell.confidence != null && cell.confidence < LOW_CONFIDENCE && (
+                      <span
+                        data-testid="low-confidence-marker"
+                        className="pointer-events-none absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-key-amber"
+                        title={`低置信度 ${(cell.confidence * 100).toFixed(0)}%，建议校对`}
                       />
                     )}
                     {isContinuation && (
