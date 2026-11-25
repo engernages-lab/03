@@ -92,8 +92,8 @@ function JobCard({ job }: { job: TranscriptionJob }) {
   return (
     <div data-testid="job-card" className="rounded-lg border border-studio-800 bg-studio-950/40 p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge tone={JOB_TONE[job.status] ?? "neutral"}>{job.status}</Badge>
-        <span className="text-[11px] text-studio-300">{STAGE_LABEL[job.status] ?? job.status}</span>
+        <span data-testid="job-status" className="sr-only">{job.status}</span>
+        <Badge tone={JOB_TONE[job.status] ?? "neutral"}>{job.status}</Badge>        <span className="text-[11px] text-studio-300">{STAGE_LABEL[job.status] ?? job.status}</span>
         <span className="font-mono text-[10px] text-studio-500">{job.job_id}</span>
         <span className="text-[11px] text-studio-400">
           {job.source_kind === "music_source" ? "来自曲库" : "本地音频"}

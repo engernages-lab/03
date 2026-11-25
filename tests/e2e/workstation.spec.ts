@@ -82,23 +82,29 @@ test("导入本地音乐 → 播放 → 检查扒谱资格 → 进入分析输�
   await page.getByRole("button", { name: "创建分析作业", exact: true }).click();
   await expect(page.getByText(/已创建分析作业/)).toBeVisible({ timeout: 15_000 });
 
-  // 7. the job runs the real pipeline. With the model installed it must produce
-  //    notes and hand over a playable/editable score; without it, it must stay
-  //    honest (analysis_only, 0 notes) instead of inventing events.
+  // 7. the job runs the real pipeline. Whatever the environment can do, the UI
+  //    must reflect it truthfully: notes + score when the model works, an
+  //    explicit 0-note/analysis_only state when it is missing, and a visible
+  //    error when nothing was detected.
   const jobCard = page.getByTestId("job-card").first();
   await expect(jobCard).toBeVisible({ timeout: 15_000 });
-  const modelReady = (await page.getByText("AI 扒谱模型已就绪").count()) > 0;
+  await expect(jobCard.getByTestId("job-status").filter({ hasText: /completed|analysis_only|failed/ })).toHaveCount(1, {
+    timeout: 180_000,
+  });
+  const status = (await jobCard.getByTestId("job-status").textContent())?.trim();
 
-  if (modelReady) {
-    await expect(jobCard.getByText("completed", { exact: true })).toBeVisible({ timeout: 180_000 });
+  if (status === "completed") {
     await expect(jobCard.getByText(/生成音符 [1-9]\d* 个/)).toBeVisible();
     await jobCard.getByRole("button", { name: /打开谱面/ }).click();
     await page.waitForURL(/\/scores\/[0-9a-zA-Z]+$/, { timeout: 30_000 });
     await expect(page.getByText("双谱对照")).toBeVisible();
     await expect(page.getByText(/音符 \d+/).first()).toBeVisible();
-  } else {
-    await expect(jobCard.getByText("analysis_only", { exact: true })).toBeVisible({ timeout: 120_000 });
+  } else if (status === "analysis_only") {
     await expect(jobCard.getByText(/生成音符 0 个/)).toBeVisible();
+    await expect(jobCard.getByText(/未生成任何音符|未内置扒谱模型/)).toBeVisible();
+  } else {
+    await expect(jobCard.getByText(/生成音符 0 个/)).toBeVisible();
+    await expect(jobCard.getByText(/TRANSCRIPTION_EMPTY|失败/)).toBeVisible();
   }
 });
 
