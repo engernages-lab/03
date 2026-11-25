@@ -234,6 +234,11 @@ def test_ensure_local_source_is_idempotent(db_session):
     count = db_session.execute(
         select(func.count())
         .select_from(MusicSourceRecord)
-        .where(MusicSourceRecord.provider == "local")
+        .where(
+            MusicSourceRecord.provider == "local",
+            # the built-in source is identified by this exact pair; other tests
+            # may register additional local-provider sources in the shared DB
+            MusicSourceRecord.display_name == "本地音乐",
+        )
     ).scalar()
     assert count == 1
