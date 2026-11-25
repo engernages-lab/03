@@ -80,6 +80,16 @@ All checks passed!
 | E2E 依赖瞬时文案「正在保存」 | 改为轮询编译后的音符数 |
 | 作业卡断言匹配到说明性文字 | 用 `data-testid="job-card"` 限定作用域 |
 
-## 6. 未通过的测试
+## 6. CI（GitHub 托管 runner）
+
+| 提交 | Backend (Py3.11 + TF backend) | Frontend | E2E |
+| --- | --- | --- | --- |
+| `7149bb4` | ✅ success | ✅ success | ✅ success |
+
+说明：本地是 Windows + ONNX Runtime，CI 是 Linux + TensorFlow —— 同一条链路在**两套后端**上都跑通，
+这比只在本地通过更有说服力。E2E 断言会读取作业的真实终态（completed / analysis_only / failed）
+并分别校验对应契约，不假设某个环境一定产出音符。
+
+## 7. 未通过的测试
 
 无。全绿。
