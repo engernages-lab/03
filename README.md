@@ -1,5 +1,8 @@
 # PocketScore AI · V1.0-A
 
+[![CI](https://github.com/engernages-lab/03/actions/workflows/ci.yml/badge.svg)](https://github.com/engernages-lab/03/actions/workflows/ci.yml)
+[![Deploy frontend to GitHub Pages](https://github.com/engernages-lab/03/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/engernages-lab/03/actions/workflows/deploy-pages.yml)
+
 **Foundation & Multi-Source Music Ecosystem** — 一个真正可使用的 Web 音乐工作站：
 多音源统一曲库 + 完整播放器 + AI 扒谱输入管线 + 自定义口袋键盘 + 格子谱 / 数字谱双引擎。
 

@@ -112,11 +112,48 @@ alembic revision --autogenerate -m "describe change"   # 改表后生成迁移
 | --- | --- |
 | 本地生产模式（单服务） | ✅ 已实测通过（`/`、`/scores`、`/api/v1/health`、`/docs` 均 200） |
 | 生产构建产物端到端测试 | ✅ 6/6 通过（`PSC_BASE_URL=http://127.0.0.1:8001 npx playwright test`） |
+| GitHub Actions CI（后端 + 前端 + E2E） | ✅ 全部通过（在 GitHub 托管 runner 上，Python 3.11 / Node 20 / Chromium） |
+| GitHub Pages 静态产物 | ✅ 产物已在本地静态托管下验证（见 §5.2） |
+| GitHub Pages 站点启用 | ⏳ **待仓库设置**：Pages 未启用，创建站点需要管理员权限（工作流令牌无此权限） |
 | Docker 镜像构建 | ⚠️ 未实际构建（本机无 Docker） |
-| 公网部署 | ❌ **未执行** —— 需要用户的托管账号/域名与凭据 |
-| GitHub Push | ✅ 已执行并验证（`main @ a0bfd06`） |
+| 公网部署 | ❌ **未完成** —— 需要启用 Pages 或提供其他托管凭据 |
+| GitHub Push | ✅ 已执行并验证（`main`，公开仓库） |
 
-### 部署前自验（不改代码即可复跑）
+### 5.1 公网地址（启用后即生效）
+
+```
+https://engernages-lab.github.io/03/
+```
+
+工作流 `.github/workflows/deploy-pages.yml` 已就绪：推送 `frontend/**` 即自动构建、
+生成 `404.html` SPA 回退、上传并部署。**唯一缺的一步是在仓库设置里启用 Pages**：
+
+1. 打开 <https://github.com/engernages-lab/03/settings/pages>
+2. Build and deployment → Source 选择 **GitHub Actions**
+3. 保存（无需其他配置）
+
+启用后可由 `python scripts/enable_pages.py` 触发并等待完成（需 `GITHUB_TOKEN`），
+或直接推送任意 `frontend/**` 改动。
+
+> 说明：Pages 只能托管静态前端。要获得完整功能（音乐库、播放器、MIDI 导入、
+> 双谱编辑、导出），还需把 FastAPI 后端部署到公网，并在构建时注入
+> `VITE_API_BASE_URL`（仓库变量），见 §3。
+
+### 5.2 静态产物本地验证
+
+```powershell
+cd frontend
+$env:VITE_BASE_PATH="/03/"; npm run build; Remove-Item Env:VITE_BASE_PATH
+# 把 dist 放到 <www>/03/ 后用任意静态服务器托管，然后：
+$env:PSC_STATIC_URL="http://127.0.0.1:8080/03/"
+npx playwright test tests/e2e/pages-artifact.spec.ts
+```
+
+该用例断言：产物在 `/03/` 子路径下能启动、路由 basename 正确（点击导航仍停留在
+`/03/` 下）、`/03/assets/*` 无 404、没有后端时页面如实显示「无法连接后端 API / 静态预览页」。
+截图见 `docs/screenshots/09-pages-static-preview.png`。
+
+### 5.3 部署前自验（不改代码即可复跑）
 
 ```powershell
 # 1) 构建产物
