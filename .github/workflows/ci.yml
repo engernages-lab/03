@@ -96,7 +96,16 @@ jobs:
       - name: Generate fixtures
         run: python scripts/make_fixtures.py
       - name: Run E2E
-        run: npx playwright test tests/e2e/workstation.spec.ts --reporter=list
+        run: |
+          set +e
+          npx playwright test tests/e2e/workstation.spec.ts --reporter=list > e2e.log 2>&1
+          code=$?
+          tail -n 60 e2e.log
+          if [ $code -ne 0 ]; then
+            summary=$(grep -E "(✘|Error:|expect\(|Timed out|waiting for)" e2e.log | head -n 8 | tr '\n' ';' | cut -c1-900)
+            echo "::error title=E2E failures::${summary}"
+          fi
+          exit $code
       - name: Upload report on failure
         if: failure()
         uses: actions/upload-artifact@v4
