@@ -185,21 +185,27 @@ https://github.com/engernages-lab/03
 
 ## 14. 公开部署地址
 
-**未部署。** 原因：缺少托管账号与凭据。任务书明确禁止"只提供本地地址并称为公开部署完成"，
-因此此处如实标注为未完成。
+```
+https://engernages-lab.github.io/03/
+```
 
-已具备的部署产物：
+**已上线并通过真实访问验证**（2026-11-25）：
 
-| 文件 | 用途 |
+| 验证项 | 结果 |
 | --- | --- |
-| `backend/Dockerfile` | 后端镜像（内含可选前端） |
-| `docker-compose.yml` | 单服务一键启动 |
-| `render.yaml` | Render Blueprint |
-| `frontend/vercel.json` | 前端分离部署 |
-| `.github/workflows/ci.yml` | CI 全链路 |
-| `docs/deployment.md` | 部署步骤与自检清单 |
+| `GET /03/` | `200 text/html`（SPA 外壳） |
+| `/03/assets/*` | 全部 200，无 404 |
+| 路由 basename | 点击侧栏导航后 URL 仍为 `/03/music-library`，不会跳出子路径 |
+| 无后端时的表现 | 显示「这是静态预览页，未连接 API」+ 部署指引（不白屏、不伪造数据） |
+| 浏览器验证 | `PSC_STATIC_URL=https://engernages-lab.github.io/03/ npx playwright test tests/e2e/pages-artifact.spec.ts` → **1 passed** |
+| 截图 | `docs/screenshots/09-pages-static-preview.png`（公网站点实拍） |
 
-本地生产模式已实测（见 §11），说明部署产物可用；**只差托管凭据**。
+发布方式：`.github/workflows/deploy-pages.yml`（GitHub Actions → Pages），
+推送 `frontend/**` 自动重新部署。
+
+**能力边界（如实说明）**：Pages 只能托管静态前端，因此公网地址目前是
+「前端 + 诚实的未连接提示」。后端 API 需要另托管（Docker/Render 产物已备好），
+再把仓库变量 `VITE_API_BASE_URL` 指向它，即可让公网站点具备完整功能。
 
 ## 15. 已知限制
 
@@ -233,10 +239,14 @@ https://github.com/engernages-lab/03
 
 **CONDITIONAL 的部分**：
 
-- 公网部署未执行（无托管凭据）；
+- 公网后端 API 未部署（Pages 只托管静态前端），因此线上是「前端 + 未连接提示」；
 - Apple Music / Spotify / Navidrome 真实账号联调缺失（无凭据/实例）；
 - 网易云、QQ 音乐无官方接口，按政策如实标注不可用。
 
-**已完成的部分**：GitHub Push 已按用户授权执行并验证（§13）。
+**已完成的部分**：
+
+- GitHub Push 已按授权执行并验证（§13）；
+- 公网前端地址已上线并完成浏览器级验证（§14）；
+- 全新克隆复现通过：237 pytest + 前端构建 + 23/23 部署验收（`docs/deployment.md` §5.4）。
 
 **FAIL 判定不成立**：核心功能不存在严重缺陷，所有未完成项均已明确记录且不谎报。

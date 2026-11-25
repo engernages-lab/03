@@ -110,36 +110,52 @@ alembic revision --autogenerate -m "describe change"   # 改表后生成迁移
 
 | 项 | 状态 |
 | --- | --- |
+| **公网地址（前端）** | ✅ **已上线**：<https://engernages-lab.github.io/03/> |
+| GitHub Pages 站点 | ✅ 已启用（Source = GitHub Actions），部署运行成功 |
+| 公网地址浏览器验证 | ✅ 通过（资源 200、路由 basename 正确、无后端时如实提示） |
 | 本地生产模式（单服务） | ✅ 已实测通过（`/`、`/scores`、`/api/v1/health`、`/docs` 均 200） |
 | 生产构建产物端到端测试 | ✅ 6/6 通过（`PSC_BASE_URL=http://127.0.0.1:8001 npx playwright test`） |
-| GitHub Actions CI（后端 + 前端 + E2E） | ✅ 全部通过（在 GitHub 托管 runner 上，Python 3.11 / Node 20 / Chromium） |
-| GitHub Pages 静态产物 | ✅ 产物已在本地静态托管下验证（见 §5.2） |
-| GitHub Pages 站点启用 | ⏳ **待仓库设置**：Pages 未启用，创建站点需要管理员权限（工作流令牌无此权限） |
+| GitHub Actions CI（后端 + 前端 + E2E） | ✅ 全部通过（Python 3.11 / Node 20 / Chromium） |
+| 全新克隆复现 | ✅ 通过（见 §5.4） |
+| 公网后端 API | ❌ **未部署** —— Pages 只能托管静态前端；完整功能需另托管 FastAPI |
 | Docker 镜像构建 | ⚠️ 未实际构建（本机无 Docker） |
-| 公网部署 | ❌ **未完成** —— 需要启用 Pages 或提供其他托管凭据 |
-| GitHub Push | ✅ 已执行并验证（`main`，公开仓库） |
 
-### 5.1 公网地址（启用后即生效）
+### 5.1 公网地址
 
 ```
 https://engernages-lab.github.io/03/
 ```
 
-工作流 `.github/workflows/deploy-pages.yml` 已就绪：推送 `frontend/**` 即自动构建、
-生成 `404.html` SPA 回退、上传并部署。**唯一缺的一步是在仓库设置里启用 Pages**：
+由 `.github/workflows/deploy-pages.yml` 自动发布：推送 `frontend/**` 即构建、
+生成 `404.html` SPA 回退、上传并部署。也可以在该工作流页面手动 **Run workflow**。
+
+**已完成的真实验证**（不是"应该能用"）：
+
+```text
+GET https://engernages-lab.github.io/03/          -> 200 text/html
+Playwright（Chromium，真实公网地址）：
+  ok 静态产物可以启动并如实说明没有后端
+  - /03/assets/* 无 404
+  - 点击侧栏导航后 URL 仍在 /03/ 下（router basename 生效）
+  - 无后端时显示「这是静态预览页，未连接 API」+ 部署指引
+```
+
+截图：`docs/screenshots/09-pages-static-preview.png`（即公网站点实拍）。
+
+> **限制必须说清**：GitHub Pages 只托管静态前端。页面上的「静态预览页，未连接 API」
+> 是**如实提示**，不是功能缺失的遮掩。要让音乐库/播放器/MIDI 导入/双谱编辑在公网可用，
+> 还需把 FastAPI 部署到任意容器托管，并用仓库变量 `VITE_API_BASE_URL` 指过去（见 §3）。
+
+### 5.2 启用 Pages 的步骤（已完成，留档）
 
 1. 打开 <https://github.com/engernages-lab/03/settings/pages>
 2. Build and deployment → Source 选择 **GitHub Actions**
-3. 保存（无需其他配置）
+3. 保存
 
-启用后可由 `python scripts/enable_pages.py` 触发并等待完成（需 `GITHUB_TOKEN`），
-或直接推送任意 `frontend/**` 改动。
+之后可由 `python scripts/enable_pages.py`（需 `GITHUB_TOKEN`）触发并等待，
+或在 Actions 页面手动 **Run workflow**。
 
-> 说明：Pages 只能托管静态前端。要获得完整功能（音乐库、播放器、MIDI 导入、
-> 双谱编辑、导出），还需把 FastAPI 后端部署到公网，并在构建时注入
-> `VITE_API_BASE_URL`（仓库变量），见 §3。
-
-### 5.2 静态产物本地验证
+### 5.3 静态产物本地验证
 
 ```powershell
 cd frontend
@@ -149,11 +165,24 @@ $env:PSC_STATIC_URL="http://127.0.0.1:8080/03/"
 npx playwright test tests/e2e/pages-artifact.spec.ts
 ```
 
-该用例断言：产物在 `/03/` 子路径下能启动、路由 basename 正确（点击导航仍停留在
-`/03/` 下）、`/03/assets/*` 无 404、没有后端时页面如实显示「无法连接后端 API / 静态预览页」。
-截图见 `docs/screenshots/09-pages-static-preview.png`。
+同一命令把 `PSC_STATIC_URL` 换成公网地址，就是对线上站点的验收。
 
-### 5.3 部署前自验（不改代码即可复跑）
+### 5.4 全新克隆复现（可复现性验收）
+
+```text
+git clone --depth 1 git@github.com:engernages-lab/03.git  -> OK
+cd frontend && npm ci && npx vite build                    -> ✓ built
+cd backend && python -m venv .venv && pip install -r requirements.txt -r requirements-dev.txt
+  -> 安装成功（SQLAlchemy 2.0.58 / pydantic 2.9.2 等最新兼容版本）
+python -m pytest                                           -> 237 passed
+python -m uvicorn app.main:app --port 8010
+python scripts/deploy_check.py --base-url http://127.0.0.1:8010
+  -> 23 passed, 0 failed
+```
+
+结论：仓库**自足可复现**，不依赖开发机上的任何未提交文件。
+
+### 5.5 部署前自验（不改代码即可复跑）
 
 ```powershell
 # 1) 构建产物

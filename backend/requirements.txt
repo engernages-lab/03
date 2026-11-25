@@ -12,6 +12,9 @@ python-multipart>=0.0.9
 pydantic>=2.7,<2.10
 pydantic-settings>=2.2,<2.6
 SQLAlchemy>=2.0,<2.1
+# SQLAlchemy pulls greenlet; 3.3+ dropped cp39 wheels, so a fresh install on
+# Python 3.9 would try to compile it. Keep the range inside the wheel set.
+greenlet>=3.0,<3.3
 alembic>=1.13,<1.14
 
 # --- HTTP client (music source adapters, token exchange) ---

@@ -6,6 +6,10 @@
 **Foundation & Multi-Source Music Ecosystem** — 一个真正可使用的 Web 音乐工作站：
 多音源统一曲库 + 完整播放器 + AI 扒谱输入管线 + 自定义口袋键盘 + 格子谱 / 数字谱双引擎。
 
+> **在线预览（前端）**：<https://engernages-lab.github.io/03/>
+> 这是静态托管的前端；未连接后端时会如实提示「静态预览页，未连接 API」。
+> 完整功能请按 [`docs/deployment.md`](docs/deployment.md) 部署后端。
+
 > 本仓库遵循“分阶段实施、逐项自检、自动化测试、独立验收”的开发纪律。
 > **任何未交付的能力都不会显示模拟数据或伪造的识别结果。**
 

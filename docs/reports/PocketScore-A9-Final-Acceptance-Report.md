@@ -169,18 +169,40 @@ $ python -m ruff check app tests        → All checks passed!
 - 独立验证：GitHub REST API 返回 `commits/main` = `ed35990a5a8c…`，树内 **187 个 blob**，
   且不含任何密钥/缓存路径。
 
-## 5. 部署产物
+## 5. 部署产物与上线状态
 
 | 文件 | 用途 |
 | --- | --- |
+| `.github/workflows/deploy-pages.yml` | **已启用**：构建 → 404 回退 → 上传 → 部署到 GitHub Pages |
 | `backend/Dockerfile` | 后端镜像（含 libsndfile、健康检查、可选内置前端） |
 | `docker-compose.yml` | 单服务一键启动 + 持久卷 |
 | `render.yaml` | Render Blueprint（Docker、健康检查、磁盘、密钥占位） |
 | `frontend/vercel.json` | Vercel 静态部署（SPA rewrite + 资源缓存） |
-| `.github/workflows/ci.yml` | CI：ruff / pytest / tsc / vitest / build / Playwright |
-| `docs/deployment.md` | 两种部署形态、环境变量、迁移、部署后自检清单 |
+| `.github/workflows/ci.yml` | CI：ruff / pytest / tsc / vitest / build / Playwright（**已全绿**） |
+| `scripts/deploy_check.py` | 部署后验收（23 项真实 HTTP 检查） |
+| `docs/deployment.md` | 两种部署形态、环境变量、迁移、上线验证记录 |
 
-**未执行**：Docker 镜像构建（本机无 Docker）、公网部署（无托管账号）。
+### 5.1 公网地址（已上线）
+
+```
+https://engernages-lab.github.io/03/
+```
+
+- 部署运行成功（Actions → Deploy frontend to GitHub Pages）。
+- 真实验证：`200 text/html`；`/03/assets/*` 无 404；路由 basename 正确；
+  无后端时如实显示「静态预览页，未连接 API」。
+- 浏览器级验证：`PSC_STATIC_URL=<公网地址> npx playwright test tests/e2e/pages-artifact.spec.ts` → 通过。
+- 边界：Pages 仅托管静态前端；后端 API 需另托管后通过 `VITE_API_BASE_URL` 接入。
+
+### 5.2 全新克隆复现
+
+```text
+git clone --depth 1  -> npm ci && vite build -> pip install -r requirements*.txt
+pytest               -> 237 passed
+uvicorn + deploy_check.py -> 23 passed, 0 failed
+```
+
+证明仓库自足：不依赖开发机上的任何未提交文件。
 
 ---
 

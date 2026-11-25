@@ -203,12 +203,19 @@ def run(base_url: str, fixtures: Path, timeout: float = 30.0) -> Report:
         if document_id:
             dual = client.get(f"/api/v1/notation/{document_id}/both")
             dual_body = dual.json() if dual.status_code == 200 else {}
-            grid_notes = dual_body.get("grid", {}).get("stats", {}).get("notes")
-            jianpu_notes = dual_body.get("jianpu", {}).get("stats", {}).get("notes")
+            grid_stats = dual_body.get("grid", {}).get("stats", {})
+            jianpu_stats = dual_body.get("jianpu", {}).get("stats", {})
+            # Both notations compile from one document. A note outside the current
+            # keyboard layout is placed as "unmapped" in the grid but still gets a
+            # scale degree in jianpu (which does not depend on the keyboard), so
+            # the invariant is notes + unmapped == jianpu notes.
+            grid_total = (grid_stats.get("notes") or 0) + (grid_stats.get("unmapped") or 0)
+            jianpu_total = jianpu_stats.get("notes") or 0
             report.record(
                 "dual notation compiled from one document",
-                dual.status_code == 200 and grid_notes == jianpu_notes and grid_notes,
-                f"HTTP {dual.status_code} grid={grid_notes} jianpu={jianpu_notes}",
+                dual.status_code == 200 and grid_total == jianpu_total and jianpu_total > 0,
+                f"HTTP {dual.status_code} grid={grid_stats.get('notes')}+{grid_stats.get('unmapped')}"
+                f" unmapped, jianpu={jianpu_total}",
             )
 
             edit = client.post(
