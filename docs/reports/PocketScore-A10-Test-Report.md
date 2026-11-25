@@ -17,7 +17,7 @@
 
 | 文件 | 数量 | 覆盖 |
 | --- | --- | --- |
-| `backend/tests/test_note_accuracy.py` | 8 | 单音/低音区/快速/和弦的 P/R/F1、时间误差、文档转换、静音、模型缺失 |
+| `backend/tests/test_note_accuracy.py` | 7 | 单音/低音区/快速/和弦的 P/R/F1、时间误差、文档转换、静音、模型缺失 |
 | `backend/tests/test_audio_formats.py` | 21 | 6 种真实格式上传与探测、MP3 转谱、伪造扩展名、空/截断文件、时长上限、一步上传接口、结果接口、非随机性 |
 | `backend/tests/test_timestamps.py` | 6 | UTC 时间戳（作业/歌单/历史） |
 | `backend/tests/test_playback_proxy.py` | 5 | Range 中继、206、认证错误映射 |
