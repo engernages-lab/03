@@ -27,7 +27,18 @@ jobs:
         run: python -m ruff check app tests
       - name: Test
         working-directory: backend
-        run: python -m pytest -q
+        run: |
+          set +e
+          python -m pytest -q --tb=short > pytest.log 2>&1
+          code=$?
+          tail -n 40 pytest.log
+          if [ $code -ne 0 ]; then
+            # Surface a compact failure summary as a check annotation so the
+            # failure is readable without downloading the full log.
+            summary=$(grep -E "^(FAILED|ERROR)" pytest.log | head -n 6 | tr '\n' ';' | cut -c1-900)
+            echo "::error title=pytest failures::${summary}"
+          fi
+          exit $code
 
   frontend:
     name: Frontend · typecheck + vitest + build
