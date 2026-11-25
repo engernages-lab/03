@@ -23,6 +23,7 @@ import type {
   ProviderInfo,
   StreamInfo,
   TranscriptionJob,
+  TranscriptionCapabilities,
   TranscriptionModels,
   UnifiedTrack,
   WaveformResponse,
@@ -445,6 +446,22 @@ export function useRunTranscriptionJob() {
   return useMutation({
     mutationFn: (jobId: string) => api.post<TranscriptionJob>(`/transcription/jobs/${jobId}/run`),
     onSuccess: () => client.invalidateQueries({ queryKey: ["transcription-jobs"] }),
+  });
+}
+
+export function useCancelTranscriptionJob() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) => api.post<TranscriptionJob>(`/transcription/jobs/${jobId}/cancel`),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["transcription-jobs"] }),
+  });
+}
+
+export function useTranscriptionCapabilities() {
+  return useQuery({
+    queryKey: ["transcription-capabilities"],
+    queryFn: () => api.get<TranscriptionCapabilities>("/transcription/capabilities"),
+    staleTime: 60_000,
   });
 }
 

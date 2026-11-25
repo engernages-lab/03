@@ -55,8 +55,7 @@ test("导入本地音乐 → 播放 → 检查扒谱资格 → 进入分析输�
 
   // 3. eligibility check on the transcription page
   await page.goto("/transcription");
-  await expect(page.getByText("扒谱能力的真实状态")).toBeVisible();
-  await expect(page.getByText(/REQUIRES_MODEL|不可用/)).toBeVisible();
+  await expect(page.getByText(/AI 扒谱模型已就绪|扒谱模型未就绪/)).toBeVisible();
 
   const select = page.locator("select").first();
   const options = await select.locator("option").allTextContents();
@@ -83,14 +82,24 @@ test("导入本地音乐 → 播放 → 检查扒谱资格 → 进入分析输�
   await page.getByRole("button", { name: "创建分析作业", exact: true }).click();
   await expect(page.getByText(/已创建分析作业/)).toBeVisible({ timeout: 15_000 });
 
-  // 7. the job runs the real signal analysis and refuses to invent notes.
-  //    Scope assertions to the job card: the page also contains explanatory
-  //    prose mentioning "analysis_only", which must not satisfy the check.
+  // 7. the job runs the real pipeline. With the model installed it must produce
+  //    notes and hand over a playable/editable score; without it, it must stay
+  //    honest (analysis_only, 0 notes) instead of inventing events.
   const jobCard = page.getByTestId("job-card").first();
   await expect(jobCard).toBeVisible({ timeout: 15_000 });
-  await expect(jobCard.getByText("analysis_only", { exact: true })).toBeVisible({ timeout: 120_000 });
-  await expect(jobCard.getByText(/生成音符 0 个/)).toBeVisible();
-  await expect(jobCard.getByText(/未内置扒谱模型/)).toBeVisible({ timeout: 15_000 });
+  const modelReady = (await page.getByText("AI 扒谱模型已就绪").count()) > 0;
+
+  if (modelReady) {
+    await expect(jobCard.getByText("completed", { exact: true })).toBeVisible({ timeout: 180_000 });
+    await expect(jobCard.getByText(/生成音符 [1-9]\d* 个/)).toBeVisible();
+    await jobCard.getByRole("button", { name: /打开谱面/ }).click();
+    await page.waitForURL(/\/scores\/[0-9a-zA-Z]+$/, { timeout: 30_000 });
+    await expect(page.getByText("双谱对照")).toBeVisible();
+    await expect(page.getByText(/音符 \d+/).first()).toBeVisible();
+  } else {
+    await expect(jobCard.getByText("analysis_only", { exact: true })).toBeVisible({ timeout: 120_000 });
+    await expect(jobCard.getByText(/生成音符 0 个/)).toBeVisible();
+  }
 });
 
 test("导入 MIDI → 生成格子谱 → 切换数字谱 → 编辑音符并保持同步", async ({ page }) => {

@@ -56,6 +56,8 @@ class Settings(BaseSettings):
 
     # -- uploads -----------------------------------------------------------
     max_upload_mb: int = 200
+    # Hard ceiling for transcription input; keeps model runtime bounded.
+    max_audio_duration_seconds: int = 600
     allowed_audio_extensions: List[str] = Field(
         default_factory=lambda: [".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".opus"]
     )

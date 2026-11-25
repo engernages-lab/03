@@ -8,6 +8,7 @@ import {
   FileJson,
   FileMusic,
   Grid3x3,
+  Image as ImageIcon,
   Keyboard,
   ListMusic,
   Minus,
@@ -29,6 +30,7 @@ import type {
 import { useDocumentStore } from "../store/document";
 import { GridScore } from "../components/notation/GridScore";
 import { JianpuScore } from "../components/notation/JianpuScore";
+import { ExportScoreDialog } from "../components/scores/ExportScoreDialog";
 import { Badge } from "../components/ui/Badge";
 import { EmptyState, Spinner } from "../components/ui/Feedback";
 import { formatDate, formatDuration } from "../lib/format";
@@ -54,6 +56,7 @@ export function ScoreEditorPage() {
 
   const [tab, setTab] = useState<NotationTab>("split");
   const [zoom, setZoom] = useState(1);
+  const [exportOpen, setExportOpen] = useState(false);
   const [divisions, setDivisions] = useState(4);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [layoutId, setLayoutId] = useState<string | null>(null);
@@ -403,6 +406,14 @@ export function ScoreEditorPage() {
           </button>
 
           <div className="ml-auto flex items-center gap-1.5">
+            <button
+              data-testid="export-image-button"
+              className="btn-ghost h-8 gap-1 px-2 text-xs"
+              onClick={() => setExportOpen(true)}
+              title="导出 9:16 高清谱面图片"
+            >
+              <ImageIcon size={13} /> 导出图片
+            </button>
             <a className="btn-icon h-8 w-8" href={`${API_V1}/documents/${document.document_id}/export`} title="导出 JSON">
               <FileJson size={14} />
             </a>
@@ -529,6 +540,10 @@ export function ScoreEditorPage() {
             取消选择
           </button>
         </div>
+      )}
+
+      {exportOpen && (
+        <ExportScoreDialog dual={view} onClose={() => setExportOpen(false)} />
       )}
     </div>
   );

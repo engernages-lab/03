@@ -125,6 +125,7 @@ export interface NoteEvent {
   kind: EventKind;
   chord_id: string | null;
   tie_group: string | null;
+  confidence?: number | null;
 }
 
 export interface GridSettings {
@@ -580,10 +581,42 @@ export interface TranscriptionJob {
   updated_at: string | null;
 }
 
+export interface NoteExtractionModel {
+  available: boolean;
+  reason: string | null;
+  code: string | null;
+  model_id: string;
+  name: string;
+  version: string;
+  license: string;
+  runtime: string | null;
+  polyphonic: boolean;
+  capabilities: {
+    monophonic_melody: boolean;
+    polyphonic: boolean;
+    piano: boolean;
+    multi_instrument: boolean;
+    velocity: boolean;
+    confidence: boolean;
+  };
+}
+
 export interface TranscriptionModels {
-  note_extraction: { available: boolean; reason: string; code: string };
+  note_extraction: NoteExtractionModel;
   signal_analysis: { available: boolean; method: string; produces_notes: boolean };
   midi_import: { available: boolean; produces_notes: boolean };
+}
+
+export interface TranscriptionCapabilities {
+  audio_formats: string[];
+  midi_formats: string[];
+  max_upload_mb: number;
+  max_duration_seconds: number;
+  note_extraction: NoteExtractionModel;
+  stages: string[];
+  terminal_states: string[];
+  produces_notes: boolean;
+  pipeline: { audio: string; midi: string };
 }
 
 export interface MidiInspectResult {

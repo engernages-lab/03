@@ -24,6 +24,7 @@ from app.services.audio.probe import (
     normalize_peak,
     probe_audio,
     validate_extension,
+    verify_decodable,
     waveform_buckets,
 )
 
@@ -160,6 +161,17 @@ def ingest_audio(
     target.write_bytes(data)
 
     probe = probe_audio(target)
+    verify_decodable(target, probe.duration)
+    limit_seconds = get_settings().max_audio_duration_seconds
+    if limit_seconds and probe.duration > limit_seconds:
+        # Remove the file we just wrote: the upload is rejected, not kept.
+        target.unlink(missing_ok=True)
+        raise ValidationAppError(
+            f"audio is longer than the {limit_seconds}s limit",
+            code="AUDIO_TOO_LONG",
+            status_code=422,
+            details={"duration": round(probe.duration, 2), "limit_seconds": limit_seconds},
+        )
     tags = extract_tags(target)
 
     artwork_path = None

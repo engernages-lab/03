@@ -21,6 +21,8 @@ from app.models.source import TranscriptionJobRecord
 from app.schemas.music_document import new_id
 from app.services import eligibility, library
 from app.services.audio import assets as audio_assets
+from app.services.audio import note_extraction
+from app.services.music_document import repository
 
 logger = get_logger("pocketscore.transcription")
 
@@ -123,22 +125,71 @@ def run_job(session: Session, job_id: str) -> TranscriptionJobRecord:
         session.commit()
 
         analysis = audio_assets.asset_analysis(asset, normalise=True)
+        warnings.extend(analysis.get("warnings") or [])
+        job.analysis_json = json.dumps(analysis, ensure_ascii=False)
 
-        job.status = "analyzing"
-        job.progress = 75
+        job.status = "transcribing"
+        job.progress = 60
         session.commit()
 
-        job.analysis_json = json.dumps(analysis, ensure_ascii=False)
-        job.method = analysis.get("method") or "none"
-        job.confidence = 0.0
-        job.events_produced = 0
-        warnings.extend(analysis.get("warnings") or [])
-        warnings.append(
-            "V1.0-A 未内置扒谱模型：已完成的只有信号分析（节拍/起音/能量），"
-            "未生成任何音符，也不会以分析结果冒充扒谱。"
+        status = note_extraction.model_status()
+        if not status["available"]:
+            job.method = "none"
+            job.confidence = 0.0
+            job.events_produced = 0
+            warnings.append(
+                "未检测到可用的扒谱模型（basic-pitch）。已完成信号分析（节拍/起音/能量），"
+                "但没有生成任何音符，也不会以分析结果冒充扒谱。"
+            )
+            job.status = "analysis_only"
+            job.progress = 100
+            job.warnings_json = json.dumps(warnings, ensure_ascii=False)
+            session.commit()
+            return job
+
+        notes = note_extraction.transcribe_file(path)
+
+        job.status = "postprocessing"
+        job.progress = 85
+        session.commit()
+
+        if not notes:
+            job.method = note_extraction.MODEL_ID
+            job.events_produced = 0
+            job.status = "failed"
+            job.progress = 100
+            job.error = (
+                "TRANSCRIPTION_EMPTY: 模型未从该音频中检测到任何音符"
+                "（可能过于安静、噪声过多或并非乐器演奏）"
+            )
+            job.warnings_json = json.dumps(warnings, ensure_ascii=False)
+            session.commit()
+            return job
+
+        tempo = float(analysis.get("bpm") or 120.0)
+        document = note_extraction.build_document(
+            notes,
+            tempo=tempo,
+            title=asset.title or (path.stem if path.stem else "AI 扒谱"),
+            artist=asset.artist or "AI 扒谱",
+            source_audio_id=asset.id,
+            filename=asset.filename,
+            extra_notes=f"由 {note_extraction.MODEL_NAME} {note_extraction.MODEL_VERSION} 识别",
         )
-        job.status = "analysis_only"
+        repository.save_document(session, document)
+
+        job.document_id = document.document_id
+        job.events_produced = len(notes)
+        job.method = note_extraction.MODEL_ID
+        job.confidence = round(
+            sum(note.amplitude for note in notes) / len(notes), 4
+        )
+        job.status = "completed"
         job.progress = 100
+        warnings.append(
+            f"{note_extraction.MODEL_NAME} {note_extraction.MODEL_VERSION} 识别出 {len(notes)} 个音符，"
+            "已写入 MusicDocument；复音与多乐器精度有限，请在谱面中人工校对。"
+        )
         job.warnings_json = json.dumps(warnings, ensure_ascii=False)
         session.commit()
         return job

@@ -4,13 +4,19 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.db import get_db, get_session_factory
+from app.core.errors import AppError
 from app.services import transcription
+from app.services.audio import assets, note_extraction
+from app.services.audio.probe import SUPPORTED_EXTENSIONS
+from app.services.music_document import repository
+from app.services.music_document.serialization import document_to_dict
 
 router = APIRouter()
 
@@ -25,11 +31,11 @@ class JobCreateRequest(BaseModel):
 @router.get("/models")
 def models() -> Dict[str, Any]:
     """Report which transcription backends are actually available."""
+    status = note_extraction.model_status()
     return {
         "note_extraction": {
-            "available": False,
-            "reason": "V1.0-A 未内置音高/节奏识别模型",
-            "code": "REQUIRES_MODEL",
+            **status,
+            "code": None if status["available"] else "REQUIRES_MODEL",
         },
         "signal_analysis": {
             "available": True,
@@ -37,6 +43,94 @@ def models() -> Dict[str, Any]:
             "produces_notes": False,
         },
         "midi_import": {"available": True, "produces_notes": True},
+    }
+
+
+@router.get("/capabilities")
+def capabilities() -> Dict[str, Any]:
+    """Everything the UI needs to configure its upload form (single source)."""
+    settings = get_settings()
+    status = note_extraction.model_status()
+    return {
+        "audio_formats": sorted(SUPPORTED_EXTENSIONS),
+        "midi_formats": [".mid", ".midi"],
+        "max_upload_mb": settings.max_upload_mb,
+        "max_duration_seconds": settings.max_audio_duration_seconds,
+        "note_extraction": status,
+        "stages": ["queued", "validating", "preprocessing", "transcribing", "postprocessing"],
+        "terminal_states": ["completed", "failed", "cancelled", "analysis_only"],
+        "produces_notes": status["available"],
+        "pipeline": {
+            "audio": "upload → FFmpeg decode → Basic Pitch → MusicDocument",
+            "midi": "upload → mido parse → MusicDocument",
+        },
+    }
+
+
+@router.post("/upload", status_code=status.HTTP_202_ACCEPTED)
+async def upload_and_transcribe(
+    background: BackgroundTasks,
+    file: UploadFile = File(...),
+    title: Optional[str] = Query(default=None),
+    artist: Optional[str] = Query(default=None),
+    confirm_rights: bool = Query(default=True),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Upload audio and start a transcription job in one call."""
+    data = await file.read()
+    record, _created = assets.ingest_audio(
+        db, data, file.filename or "upload.bin", title=title, artist=artist
+    )
+    job = transcription.create_job(
+        db,
+        asset_id=record.id,
+        user_confirmed_rights=confirm_rights,
+    )
+    job_id = job.id
+    background.add_task(
+        _run_async_wrapper, job_id
+    )
+    payload = transcription.job_to_dict(job)
+    payload["asset"] = {
+        "asset_id": record.id,
+        "filename": record.filename,
+        "duration": record.duration,
+        "sample_rate": record.sample_rate,
+        "channels": record.channels,
+        "codec": record.codec,
+        "size_bytes": record.size_bytes,
+    }
+    return payload
+
+
+async def _run_async_wrapper(job_id: str) -> None:
+    await run_in_threadpool(_run_sync_job, job_id)
+
+
+@router.get("/jobs/{job_id}/result")
+def job_result(job_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """Return the MusicDocument produced by a finished job."""
+    job = transcription.get_job(db, job_id)
+    if job.status != "completed":
+        raise AppError(
+            "该作业尚未完成，没有可返回的谱面",
+            code="TRANSCRIPTION_NOT_READY",
+            status_code=409,
+            details={"status": job.status, "error": job.error},
+        )
+    if not job.document_id:
+        raise AppError(
+            "作业已完成但没有关联谱面",
+            code="TRANSCRIPTION_NO_DOCUMENT",
+            status_code=409,
+        )
+    document = repository.load_document(db, job.document_id)
+    return {
+        "job_id": job.id,
+        "document": document_to_dict(document),
+        "events_produced": job.events_produced,
+        "method": job.method,
+        "confidence": job.confidence,
     }
 
 

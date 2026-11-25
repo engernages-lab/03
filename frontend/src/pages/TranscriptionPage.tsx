@@ -6,6 +6,7 @@ import {
   Ban,
   CheckCircle2,
   FileMusic,
+  RotateCcw,
   Gauge,
   Play,
   ShieldQuestion,
@@ -18,7 +19,9 @@ import {
   useImportMidi,
   useInspectMidi,
   useLibraryStats,
+  useCancelTranscriptionJob,
   useRunTranscriptionJob,
+  useTranscriptionCapabilities,
   useTracks,
   useTranscriptionJobs,
   useTranscriptionModels,
@@ -55,15 +58,42 @@ const JOB_TONE: Record<string, "success" | "warning" | "danger" | "info" | "neut
   queued: "info",
   validating: "info",
   preprocessing: "info",
+  transcribing: "info",
+  postprocessing: "info",
   analyzing: "info",
 };
 
+const STAGE_LABEL: Record<string, string> = {
+  queued: "排队中",
+  validating: "校验文件",
+  preprocessing: "音频预处理",
+  transcribing: "AI 识别音符",
+  postprocessing: "生成谱面",
+  completed: "已完成",
+  analysis_only: "仅信号分析",
+  failed: "失败",
+  cancelled: "已取消",
+};
+
+const ACTIVE_STATES = [
+  "queued",
+  "validating",
+  "preprocessing",
+  "transcribing",
+  "postprocessing",
+  "analyzing",
+];
+
 function JobCard({ job }: { job: TranscriptionJob }) {
   const run = useRunTranscriptionJob();
+  const cancel = useCancelTranscriptionJob();
+  const navigate = useNavigate();
+  const active = ACTIVE_STATES.includes(job.status);
   return (
     <div data-testid="job-card" className="rounded-lg border border-studio-800 bg-studio-950/40 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone={JOB_TONE[job.status] ?? "neutral"}>{job.status}</Badge>
+        <span className="text-[11px] text-studio-300">{STAGE_LABEL[job.status] ?? job.status}</span>
         <span className="font-mono text-[10px] text-studio-500">{job.job_id}</span>
         <span className="text-[11px] text-studio-400">
           {job.source_kind === "music_source" ? "来自曲库" : "本地音频"}
@@ -75,11 +105,20 @@ function JobCard({ job }: { job: TranscriptionJob }) {
         <div
           className={clsx(
             "h-full rounded-full transition-all",
-            job.status === "failed" ? "bg-key-rose" : job.status === "analysis_only" ? "bg-key-amber" : "bg-accent",
+            job.status === "failed"
+              ? "bg-key-rose"
+              : job.status === "analysis_only"
+                ? "bg-key-amber"
+                : job.status === "completed"
+                  ? "bg-accent"
+                  : "bg-key-cyan",
           )}
           style={{ width: `${job.progress}%` }}
         />
       </div>
+      <p className="mt-1 text-[10px] text-studio-500">
+        进度 {job.progress}%{active ? " · 后端正在处理，可以离开本页稍后回来查看" : ""}
+      </p>
 
       {job.analysis && (
         <div className="mt-2 grid grid-cols-2 gap-1.5 text-[10px] text-studio-400 sm:grid-cols-4">
@@ -98,15 +137,43 @@ function JobCard({ job }: { job: TranscriptionJob }) {
       )}
       {job.error && <p className="mt-1 text-[10px] text-key-rose">{job.error}</p>}
 
-      {job.status === "queued" && (
-        <button
-          className="btn-ghost mt-2 h-7 py-0 text-[11px]"
-          onClick={() => run.mutate(job.job_id)}
-          disabled={run.isPending}
-        >
-          立即执行
-        </button>
-      )}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {job.status === "completed" && job.document_id && (
+          <button
+            className="btn-primary h-7 py-0 text-[11px]"
+            onClick={() => navigate(`/scores/${job.document_id}`)}
+          >
+            <FileMusic size={12} /> 打开谱面
+          </button>
+        )}
+        {job.status === "queued" && (
+          <button
+            className="btn-ghost h-7 py-0 text-[11px]"
+            onClick={() => run.mutate(job.job_id)}
+            disabled={run.isPending}
+          >
+            立即执行
+          </button>
+        )}
+        {job.status === "failed" && (
+          <button
+            className="btn-ghost h-7 py-0 text-[11px]"
+            onClick={() => run.mutate(job.job_id)}
+            disabled={run.isPending}
+          >
+            <RotateCcw size={12} /> 重新尝试
+          </button>
+        )}
+        {active && (
+          <button
+            className="btn-ghost h-7 py-0 text-[11px]"
+            onClick={() => cancel.mutate(job.job_id)}
+            disabled={cancel.isPending}
+          >
+            取消
+          </button>
+        )}
+      </div>
       <p className="mt-1.5 text-[10px] text-studio-600">
         生成音符 {job.events_produced} 个 · 方法 {job.method ?? "—"} · 置信度{" "}
         {Math.round(job.confidence * 100)}%
@@ -118,6 +185,7 @@ function JobCard({ job }: { job: TranscriptionJob }) {
 export function TranscriptionPage() {
   const navigate = useNavigate();
   const models = useTranscriptionModels();
+  const capabilities = useTranscriptionCapabilities();
   const jobs = useTranscriptionJobs();
   const stats = useLibraryStats();
   const tracks = useTracks({ limit: 100 });
@@ -133,6 +201,7 @@ export function TranscriptionPage() {
 
   const eligibility = useEligibility(selectedTrackId ?? undefined);
   const selectedTrack = tracks.data?.items.find((track) => track.track_id === selectedTrackId) ?? null;
+  const modelReady = Boolean(models.data?.note_extraction.available);
 
   const handleAudioUpload = async (file: File) => {
     setMessage(null);
@@ -143,7 +212,11 @@ export function TranscriptionPage() {
         return form;
       })());
       const job = await createJob.mutateAsync({ asset_id: asset.asset_id });
-      setMessage(`已创建分析作业 ${job.job_id}（真实信号分析，不会生成假音符）`);
+      setMessage(
+        modelReady
+          ? `已开始 AI 扒谱：${file.name}（${formatDuration(asset.duration)}）· 作业 ${job.job_id}，完成后点「打开谱面」`
+          : `已创建分析作业 ${job.job_id}（未安装模型，只做信号分析，不会生成音符）`,
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "上传失败");
     }
@@ -168,24 +241,45 @@ export function TranscriptionPage() {
       {/* model status */}
       <section className="panel p-4">
         <div className="flex flex-wrap items-start gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-key-amber/15 text-key-amber">
-            <ShieldQuestion size={18} />
+          <div
+            className={clsx(
+              "grid h-10 w-10 place-items-center rounded-xl",
+              modelReady ? "bg-accent/15 text-accent" : "bg-key-amber/15 text-key-amber",
+            )}
+          >
+            {modelReady ? <CheckCircle2 size={18} /> : <ShieldQuestion size={18} />}
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-semibold text-white">扒谱能力的真实状态</h3>
-            <p className="mt-1 text-[11px] leading-relaxed text-studio-400">
-              V1.0-A 交付的是<b>输入管线与信号分析</b>。系统<b>没有</b>内置音高/节奏识别模型，
-              因此不会凭空生成音符——作业会停在 <code className="font-mono">analysis_only</code> 状态，
-              并明确标注「未生成音符」。要得到可编辑谱面，请使用 MIDI 导入，或在后续版本接入模型。
-            </p>
+            <h3 className="text-sm font-semibold text-white">
+              {modelReady ? "AI 扒谱模型已就绪" : "扒谱模型未就绪"}
+            </h3>
+            {modelReady ? (
+              <p className="mt-1 text-[11px] leading-relaxed text-studio-400">
+                已接入 <b>{models.data?.note_extraction.name}</b>{" "}
+                {models.data?.note_extraction.version}（{models.data?.note_extraction.license}，
+                {models.data?.note_extraction.runtime ?? "onnxruntime"}）。上传音频后会真实解码并识别
+                音高、起止时间与力度，结果写入同一份 MusicDocument，可直接进入格子谱 / 数字谱编辑。
+                复音与多乐器精度有限，请人工校对。
+              </p>
+            ) : (
+              <p className="mt-1 text-[11px] leading-relaxed text-studio-400">
+                未检测到可用的扒谱模型，音频只会做信号分析（节拍/起音/能量），<b>不会生成任何音符</b>。
+                安装方式：<code className="font-mono">pip install basic-pitch</code>
+                （Windows + Python&lt;3.11 会自动使用 onnxruntime）。
+                {models.data?.note_extraction.reason ? ` ${models.data.note_extraction.reason}` : ""}
+              </p>
+            )}
             <div className="mt-2 flex flex-wrap gap-2">
-              <Badge tone={models.data?.note_extraction.available ? "success" : "danger"}>
-                音符识别：{models.data?.note_extraction.available ? "可用" : "不可用（REQUIRES_MODEL）"}
+              <Badge tone={modelReady ? "success" : "danger"}>
+                音符识别：{modelReady ? `${models.data?.note_extraction.name}` : "不可用（REQUIRES_MODEL）"}
               </Badge>
               <Badge tone="info">
                 信号分析：{models.data?.signal_analysis.method ?? "librosa"}
               </Badge>
               <Badge tone="success">MIDI 导入：可用且生成音符</Badge>
+              {models.data?.note_extraction.capabilities.polyphonic && (
+                <Badge tone="info">复音识别：支持</Badge>
+              )}
             </div>
           </div>
         </div>
@@ -221,14 +315,18 @@ export function TranscriptionPage() {
           </button>
         </section>
 
-        {/* path 2: audio analysis */}
+        {/* path 2: audio transcription */}
         <section className="panel p-4">
           <div className="flex items-center gap-2">
             <AudioLines size={15} className="text-key-cyan" />
-            <h3 className="text-sm font-semibold text-white">音频信号分析（不生成音符）</h3>
+            <h3 className="text-sm font-semibold text-white">
+              {modelReady ? "上传音频，AI 识别成谱" : "上传音频（仅信号分析）"}
+            </h3>
           </div>
           <p className="mt-1 text-[11px] leading-relaxed text-studio-500">
-            上传你拥有处理权的音频，执行标准化、节拍估计、起音检测与能量统计。结果只作为分析数据展示。
+            {modelReady
+              ? "支持 MP3 / WAV / FLAC / M4A / AAC / OGG / OPUS。后端用 FFmpeg 真实解码并校验（不信任扩展名），再用模型识别音高、起止与力度，写入 MusicDocument。"
+              : "支持 MP3 / WAV / FLAC / M4A / AAC / OGG / OPUS。未安装模型时只做标准化、节拍估计、起音检测与能量统计，不生成音符。"}
           </p>
           <input
             ref={audioInput}
@@ -242,15 +340,23 @@ export function TranscriptionPage() {
             }}
           />
           <button
-            className="btn-ghost mt-3 w-full"
+            className="btn-primary mt-3 w-full"
             onClick={() => audioInput.current?.click()}
             disabled={uploadAudio.isPending || createJob.isPending}
           >
             <Gauge size={14} />
-            {uploadAudio.isPending ? "上传中…" : "上传音频并创建分析作业"}
+            {uploadAudio.isPending
+              ? "上传并解码中…"
+              : createJob.isPending
+                ? "创建识别作业…"
+                : modelReady
+                  ? "选择音频并开始 AI 扒谱"
+                  : "上传音频并创建分析作业"}
           </button>
           <p className="mt-2 text-[10px] text-studio-600">
-            当前曲库 {stats.data?.tracks ?? 0} 首 · 分析作业 {stats.data?.transcription_jobs ?? 0} 个
+            单文件 ≤ {capabilities.data?.max_upload_mb ?? "—"} MB · 时长 ≤{" "}
+            {Math.round((capabilities.data?.max_duration_seconds ?? 0) / 60) || "—"} 分钟 · 当前曲库{" "}
+            {stats.data?.tracks ?? 0} 首 · 分析作业 {stats.data?.transcription_jobs ?? 0} 个
           </p>
         </section>
       </div>

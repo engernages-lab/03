@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import wave
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -172,6 +173,67 @@ def _probe_with_wave(path: Path) -> Optional[AudioProbe]:
         container="wav",
         method="wave",
     )
+
+
+def verify_decodable(path: Path, expected_duration: float = 0.0) -> None:
+    """Decode a slice and compare it with the probed duration.
+
+    Metadata probing alone accepts a WAV whose header claims 1.8 s but whose data
+    chunk was cut off - FFmpeg then decodes a few milliseconds and exits 0. That
+    is a truncated file, so the decoded length is compared against the probe.
+    """
+    ffmpeg = resolve_ffmpeg()
+    if not ffmpeg:
+        return  # cannot verify without FFmpeg; the probe already validated
+
+    window = max(0.1, min(expected_duration or 1.0, 2.0))
+    with tempfile.TemporaryDirectory() as tmp:
+        target = Path(tmp) / "decoded.wav"
+        command = [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(path),
+            "-t",
+            f"{window:.3f}",
+            "-f",
+            "wav",
+            "-y",
+            str(target),
+        ]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=120)
+        except (OSError, subprocess.SubprocessError) as exc:  # pragma: no cover - defensive
+            raise ValidationAppError(
+                f"could not decode the audio: {exc}", code="AUDIO_PROBE_FAILED"
+            ) from exc
+        if result.returncode != 0 or not target.exists():
+            detail = (result.stderr or "").strip().splitlines()
+            raise ValidationAppError(
+                "audio could not be decoded (corrupt file)",
+                code="AUDIO_PROBE_FAILED",
+                details={"detail": detail[-1][:200] if detail else ""},
+            )
+        try:
+            with wave.open(str(target), "rb") as handle:
+                decoded = handle.getnframes() / float(handle.getframerate() or 1)
+        except (wave.Error, OSError) as exc:  # pragma: no cover - defensive
+            raise ValidationAppError(
+                f"decoded audio is unreadable: {exc}", code="AUDIO_PROBE_FAILED"
+            ) from exc
+
+    minimum = max(0.05, window * 0.3)
+    if decoded < minimum:
+        raise ValidationAppError(
+            "audio is truncated or corrupt: the decoded length is far shorter than its metadata",
+            code="AUDIO_PROBE_FAILED",
+            details={
+                "expected_seconds": round(window, 3),
+                "decoded_seconds": round(decoded, 3),
+            },
+        )
 
 
 def probe_audio(path: Path) -> AudioProbe:

@@ -87,6 +87,9 @@ class NoteEvent(BaseModel):
     kind: EventKind = "note"
     chord_id: Optional[str] = Field(default=None, max_length=48)
     tie_group: Optional[str] = Field(default=None, max_length=48)
+    # Per-note model confidence (0..1). Only set by audio transcription; manual
+    # and MIDI events leave it None.
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
 
     @model_validator(mode="after")
     def _kind_matches_pitch(self) -> "NoteEvent":
@@ -140,6 +143,11 @@ class SourceMetadata(BaseModel):
     provider_track_id: Optional[str] = Field(default=None, max_length=128)
     imported_at: Optional[datetime] = None
     notes: Optional[str] = Field(default=None, max_length=2000)
+    # Audio-transcription provenance (A.10). Optional so existing documents and
+    # clients keep validating unchanged.
+    recognition_model: Optional[str] = Field(default=None, max_length=64)
+    recognition_version: Optional[str] = Field(default=None, max_length=32)
+    source_audio_asset_id: Optional[str] = Field(default=None, max_length=48)
 
 
 class MusicDocument(BaseModel):

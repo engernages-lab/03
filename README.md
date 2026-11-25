@@ -28,9 +28,13 @@
 | A.7 | 数字谱与双格式同步 | ✅ 完成 |
 | A.8 | 多音源音乐中心与完整播放器 | ✅ 完成（外部平台按真实授权情况交付，见报告） |
 | A.9 | 数据库、测试与部署 | 🟡 测试与部署产物完成；公网部署待托管凭据（Push 已完成） |
+| A.10 | 核心功能审计 + 真实音频扒谱 | ✅ 完成（Basic Pitch ONNX，音频→音符→谱面全链路） |
+| A.10-S | 9:16 高清谱面图片导出 | ✅ 完成（PNG / ZIP / 三主题 / 自动分页） |
 
-**测试现状**：后端 `pytest` **229 passed** · 前端 `vitest` **46 passed** · 端到端 `playwright` **6 passed**
-（dev server 与生产构建产物各跑一遍，合计 **281** 项）
+**测试现状**：后端 `pytest` **267 passed** · 前端 `vitest` **70 passed** · 端到端 `playwright` **9 passed**
+
+**AI 扒谱模型**：Basic Pitch 0.4.0（ICASSP 2022，Apache-2.0，ONNX Runtime CPU），
+单音旋律实测 F1 = 1.000、起点误差 ≈ 9 ms；复音/快速音型精度有限，需人工校对。
 
 仓库：<https://github.com/engernages-lab/03>（`main`，公开）
 
