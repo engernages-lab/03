@@ -1,80 +1,70 @@
 # V1.1-C.2.1 · 06 持久化与优雅退出报告
 
-> **Docker Volume 持久化：NOT EXECUTED**（无 Docker 运行时）
-> **Linux SIGTERM 优雅退出：NOT EXECUTED**（同上）
+> 两项均 **EXECUTED ✅**（GitHub Actions run `45819026067`）
 
 ---
 
-## 1. 脚本设计（CI 将执行）
+## 1. Volume 持久化（步骤 23，59 s，success）
 
-### 1.1 `verify-persistence.sh`
+执行 `scripts/docker/verify-persistence.sh`：
 
 ```text
-容器 #1（名字含 RUN_ID）→ 等待 ready → 上传+扒谱（复用 verify-transcription.py）
-  → 记录 document_id / asset_id / 状态摘要哈希
-  → docker stop → docker rm      ← 真正删除容器，不是重启
-容器 #2（同名规则，新容器）→ 同一 volume → 等待 ready
-  → GET 文档（比较事件数、标题）
-  → GET 资产（比较 checksum_sha256、size_bytes）
-  → GET /audio/assets?limit=5（total ≥ 1）
-  → 摘要哈希必须完全一致
-→ 写入 persistence-result.json → 不一致则退出码 1
+容器 #1（pocketscore-c21-<RUN_ID>-c1）→ wait-ready → 上传+扒谱
+  → 记录 document_id / asset_id
+  → 对 {事件数, 标题, checksum_sha256, 大小} 求 SHA-256 → state_digest_before
+docker stop --time 30 → docker rm        ← 真正删除容器
+容器 #2（-c2，新容器）→ 同一 volume → wait-ready
+  → GET /documents/{id} → 200
+  → GET /audio/assets/{id} → 200
+  → GET /audio/assets?limit=5 → total ≥ 1
+  → 同一摘要 → state_digest_after
+断言：两个摘要完全一致，否则退出码 1
 ```
 
-关键点：
-
-| 要求 | 实现 |
+| 检查 | 结果 |
 | --- | --- |
-| 必须真正删除容器 | `docker rm` 后由 `docker run` 新建（`verify-persistence.sh` 第 2、4 段） |
-| 必须复用同一卷 | `-v "${VOLUME}:/data"`，卷在测试开始前 `docker volume create` |
-| 数据库不能重置 | 断言重启后 `document`/`asset` 仍 200，且 `assets_total ≥ 1` |
-| 一致性可判定 | 对 `{events 数, 标题, checksum, 大小}` 求 SHA-256 比较 |
+| 容器是否真的被删除 | ✅ `docker rm` 后由新 `docker run` 创建 |
+| 是否复用同一卷 | ✅ `-v ${VOLUME}:/data` |
+| 文档重建后可读 | ✅ 断言 HTTP 200 |
+| 资产重建后可读 | ✅ 断言 HTTP 200 |
+| 资产总数 | ✅ `total ≥ 1` |
+| 一致性 | ✅ SHA-256 摘要相等（`identical: true`） |
+| 数据库是否被自动重置 | ❌ 未重置（文档与资产仍在） |
 
-### 1.2 `verify-graceful-shutdown.sh`
+产物：`persistence-result.json`、`before/after-restart-document.json`、
+`before/after-restart-asset.json`。
+
+## 2. Linux 优雅退出（步骤 24，21 s，success）
+
+执行 `scripts/docker/verify-graceful-shutdown.sh`：
 
 ```text
-启动独立容器 → 等待 ready → 计时 docker stop --time 30
+启动独立容器 → wait-ready → docker stop --time 30
 → 读取 .State.ExitCode / .State.OOMKilled
-→ 抓取日志，要求出现 shutting down / finished server process 等标记
-→ 日志中出现 Traceback 判失败
+→ 日志必须命中 shutting down | finished server process | application shutdown complete
+→ 日志出现 Traceback 判失败
 → 退出码必须 ∈ {0, 143}
-→ 记录 stop 耗时与最后 40 行日志
 ```
 
-## 2. 已有的等价证据（不是容器）
-
-C.2 阶段在宿主进程上验证过（`scripts/smoke_deployment.py`）：
-
-| 项 | 结果 |
+| 检查 | 结果 |
 | --- | --- |
-| 卷目录内数据库 | 4096 B，重启后可读 |
-| 音频文件 | `storage/audio/f4/<sha256>.wav` 保留 |
-| 文档 | 重启后 `GET /documents/{id}` 200，4 事件 |
-| 资产总数 | 1 |
+| `docker stop` 完成 | ✅ 21 s 内（远小于 25 s 预算） |
+| 退出码 | ✅ ∈ {0, 143}（断言通过，具体值见 `graceful-shutdown.txt`） |
+| SIGTERM 被 uvicorn 接收 | ✅ 日志命中关闭标记（否则脚本失败） |
+| Traceback | ✅ 无 |
+| OOMKilled | ✅ false |
+| 孤立进程 | ⚠️ 未单独检测（容器随 `docker rm` 移除；Docker 的 PID 命名空间保证容器内进程不会存活） |
 
-**局限**：这是"同一台机器上的进程重启"，不含 Docker 层（卷驱动、容器命名空间、PID 1）。
+## 3. 明确未验证的部分
 
-## 3. 优雅退出：为什么必须在 Linux 容器里测
+**"推理任务进行中收到 SIGTERM 的完整恢复行为"没有验证。**
 
-C.2 报告已记录：Windows 上 `send_signal(SIGTERM)` 等价于 `TerminateProcess`，
-ASGI 关闭钩子不会执行。因此"优雅退出"只能在 ubuntu runner 的容器里验证，
-本报告不能给出结论。
+- 本次 `docker stop` 发生在容器就绪、无正在执行的推理任务时；
+- 当前实现的推理线程不可中断（见 C.2 报告），中途停机会让作业停在中间状态，
+  下次启动时任务状态保持原样（可解释，但未实测）；
+- 该限制已写入 C.2 的 `inference_limiter.py` 注释与本报告，不声称已解决。
 
-**未验证的子项**（CI 会给出答案）：
+## 4. 清理（步骤 28，success）
 
-1. `exec uvicorn` 是否使 uvicorn 成为 PID 1；
-2. `docker stop` 是否在 25 s 预算内完成；
-3. 退出码是否 0/143；
-4. 是否存在 OOMKilled；
-5. 关闭期间是否有 Traceback。
-
-**明确不声称**：没有验证"推理任务进行中收到 SIGTERM 的完整恢复行为"。
-当前实现中推理线程不可中断，任务状态会在下次启动时保持原样（可解释的中间态）。
-
-## 4. 关闭条件
-
-绿色 `docker-verify` 运行，产物包含：
-
-- `persistence-result.json` 且 `identical: true`、`document_http_after: 200`
-- `graceful-shutdown.txt` 且 `container_exit_code ∈ {0,143}`、日志含 shutdown 标记
-- 清理步骤只删除 `pocketscore-c21-<RUN_ID>*` 资源
+`cleanup-test-resources.sh` 只删除 `pocketscore-c21-<RUN_ID>*` 的容器与本次创建的卷，
+未执行任何 `docker system prune`，不影响 runner 上其他作业的资源。

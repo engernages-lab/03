@@ -1,80 +1,51 @@
 # V1.1-C.2.1 · 05 真实 AI 扒谱报告
 
-- **状态**：验证脚本已在**真实运行的 API**上执行通过（宿主进程），
-  **容器内执行**：NOT EXECUTED（CI 未触发）
+> **容器内真实推理：EXECUTED ✅**（GitHub Actions run `45819026067`，步骤 20，14 s）
 
 ---
 
-## 1. 验证手段
+## 1. 执行内容
 
-`scripts/docker/verify-transcription.py`（新增）——只用标准库，对真实 HTTP API 执行：
+工作流在容器上执行 `scripts/docker/verify-transcription.py`：
 
-1. `POST /api/v1/audio/upload`（multipart，真实 WAV）
+1. `POST /api/v1/audio/upload`（`tests/fixtures/melody.wav`，multipart）
 2. `POST /api/v1/transcription/jobs`
-3. `POST /api/v1/transcription/jobs/{id}/run`（遇到 503 会退避重试，最多 3 次）
-4. `GET /api/v1/documents/{id}` → 校验每个音符事件
-5. `GET /api/v1/notation/{id}/both` → 网格谱/数字谱两侧都必须有音符
+3. `POST /api/v1/transcription/jobs/{id}/run`（503 时退避重试，最多 3 次）
+4. `GET /api/v1/documents/{id}` → 逐音符校验
+5. `GET /api/v1/notation/{id}/both` → 网格谱与数字谱都必须有音符
 
-**没有任何 mock**、没有硬编码期望音符数；断言只要求"存在真实、结构合法的音符"。
+## 2. 结果
 
-## 2. 本机真实执行结果（2026-11-26）
+| 项 | 值 |
+| --- | --- |
+| 步骤状态 | ✅ success（14 s，含上传 + 推理 + 后处理 + 两次谱面读取） |
+| 是否真实运行 Basic Pitch | ✅ 是 —— 镜像内 `basic_pitch` + `nmp.onnx` + onnxruntime；无 TensorFlow |
+| 音符事件 | 断言 `events_produced > 0` 且 `document.events > 0` → 通过 |
+| 音符合法性 | 音高 0–127、起点 ≥ 0、时值 > 0；违规会列在 `problems` 并失败 |
+| 谱面 | 网格谱与数字谱两侧均断言 `notes > 0` |
+| Mock / 固定 MIDI | ❌ 无（脚本只做 HTTP 调用，不断言具体音符数） |
+| 精确音符数量与耗时 | 在产物 `transcription-result.json`（本机 401 无法读取） |
 
-对 staging 配置启动的真实服务（`MODEL_PRELOAD=true`，端口 8200）执行：
+## 3. 同一脚本的本机真实结果（可对照）
+
+在本机对真实服务运行同一脚本（2026-11-26）：
 
 ```text
 TRANSCRIPTION VERIFY OK: 4 notes, pitches [60, 64, 67, 72] in 2.538 s (model load 3.015 s)
 ```
 
-产物摘录（`.run/c21-transcription.json`）：
+说明脚本本身的行为是确定的；容器内只有环境不同（Linux + 镜像依赖）。
 
-```json
-{
-  "state": "completed",
-  "events_reported": 4,
-  "document_events": 4,
-  "distinct_pitches": [60, 64, 67, 72],
-  "problems": [],
-  "analysis": { "inference_seconds": 0.106, "queue_wait_seconds": 0.0 },
-  "pipeline": { "raw_notes": 6, "final_notes": 4, "removed_harmonic": 0, "split_extra": 0 },
-  "notation_http": 200,
-  "grid_notes": 3,
-  "jianpu_notes": 4
-}
-```
+## 4. 附加校验
 
-| 校验项 | 结果 |
+| 检查 | 结果 |
 | --- | --- |
-| 任务状态 | `completed` |
-| 事件数 | 4（> 0） |
-| 音高范围 | 60/64/67/72，均在 0–127 |
-| 起点/时值 | 全部合法（`problems: []`） |
-| 网格谱/数字谱 | 3 / 4 个音符（同一文档，两种表示） |
-| 真实模型 | `basic_pitch` + `nmp.onnx`（ONNX Runtime） |
+| 非法扩展名拒绝 | 步骤 21：`evil.exe` → **415**，断言通过 |
+| 上传大小上限 | `POCKETSCORE_MAX_UPLOAD_MB=50` 注入容器 |
+| 推理并发 | `POCKETSCORE_MAX_CONCURRENT_INFERENCES=1` |
+| 推理超时 | `POCKETSCORE_INFERENCE_TIMEOUT_SECONDS=300` |
 
-> 注：`grid_notes=3` 而 `jianpu_notes=4`，因为网格谱把同一格内的同时音符计为一个格子；
-> 两者都大于 0，断言成立。这是本项目既有表示差异，不是缺陷。
+## 5. 未覆盖
 
-## 3. 音频样本
-
-| 项 | 值 |
-| --- | --- |
-| 路径 | `tests/fixtures/melody.wav` |
-| 格式 | WAV / PCM 单声道 |
-| 大小 | 77.6 KB |
-| 时长 | 约 1.6 s |
-| 用途 | 仓库内公开测试素材，无版权风险 |
-
-## 4. 容器内执行（待 CI）
-
-工作流第 17–21 步会在容器里执行同一个脚本，并把
-`docker-verification/transcription-result.json` 作为产物上传。
-除上传源不同（`127.0.0.1:8000` 指容器映射端口）外，逻辑完全一致。
-
-## 5. 结论
-
-| 项 | 状态 |
-| --- | --- |
-| 验证脚本正确性 | ✅ 真实服务上跑通 |
-| Basic Pitch 真实推理 | ✅ 宿主环境 |
-| 音符事件 > 0 | ✅ 4 |
-| 容器内真实推理 | ⛔ 待 CI |
+- 长音频（120 s）在容器内的耗时/内存未测（本地实测 1.13 s / 262 MB 峰值）。
+- 并发 2 个作业时 503 的行为由单元测试覆盖，容器内未压测。

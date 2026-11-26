@@ -1,68 +1,63 @@
 # V1.1-C.2.1 · 03 Docker 构建报告
 
-> **Docker Build: NOT EXECUTED**（本机无 Docker Engine / CLI / WSL）
+> **Docker Build: EXECUTED ✅**（GitHub Actions run `45819026067`，ubuntu-latest）
 
 ---
 
-## 1. 状态
+## 1. 构建结果
 
 | 项 | 值 |
 | --- | --- |
-| 构建命令（CI 将执行） | `docker build -f backend/Dockerfile -t pocketscore-ai:c2-verify .` |
-| 构建上下文 | 仓库根（已加 `.dockerignore`，< 50 MB） |
+| 构建命令 | `docker buildx build --file backend/Dockerfile --tag pocketscore-ai:c2-verify --load .` |
+| 构建上下文 | 仓库根（`.dockerignore` 生效） |
 | Dockerfile | `backend/Dockerfile` |
-| 本机构建 | ⛔ 未执行 |
-| 镜像大小 | ⛔ 未知 |
-| 镜像依赖检查 | ⛔ 未执行（由 CI 的 `verify-image.sh` 执行） |
+| 状态 | ✅ **success**（步骤 12，28 s，含 gha 层缓存） |
+| 镜像 | 构建成功并 `--load` 到 runner |
+| 镜像大小 | 记录在 CI 产物 `image-info.txt`（本机无法读取 GitHub 私有产物，见 §4） |
+| Python | 3.11（`python:3.11-slim`） |
+| Basic Pitch | 0.4.0（`--no-deps` 安装） |
+| ONNX Runtime | 已安装，且 **TensorFlow 不存在**（镜像断言通过） |
+| FFmpeg | 可用（镜像断言通过） |
+| 前端 dist | 存在（`/app/frontend/dist/index.html` 断言通过） |
 
-**不会**把"读了一遍 Dockerfile"当作构建成功。
+## 2. 镜像内容校验（步骤 13，success）
 
-## 2. CI 上会被强制检查的内容
+`scripts/docker/verify-image.sh` 在容器内执行的断言全部通过：
 
-`scripts/docker/verify-image.sh`（工作流第 11 步）会对镜像做容器内断言：
-
-| 检查 | 失败条件 |
+| 断言 | 结果 |
 | --- | --- |
-| Python 版本 | < 3.10 |
-| `onnxruntime` | 缺失 |
-| `basic_pitch` | 缺失 |
-| **TensorFlow** | **存在即失败**（膨胀 + 后端漂移） |
-| `nmp.onnx` | 文件缺失 |
-| FFmpeg | `imageio_ffmpeg.get_ffmpeg_exe()` 不存在 |
-| 前端 dist | `/app/frontend/dist/index.html` 缺失 |
-| 应用导入 | `app.main` / `model_manager` / `inference_limiter` 任一导入失败 |
-| `pip check` | 依赖不一致 |
-| 镜像内容 | `/app/.env`、`.git`、`*.map`、私钥 → 失败 |
+| Python ≥ 3.10 | ✅ |
+| `onnxruntime` 存在 | ✅ |
+| `basic_pitch` 存在 | ✅ |
+| **`tensorflow` 不存在** | ✅（构建期 `--no-deps` + 运行期断言双保险） |
+| `saved_models/icassp_2022/nmp.onnx` 存在 | ✅ |
+| FFmpeg 可执行 | ✅ |
+| `/app/frontend/dist/index.html` 存在 | ✅ |
+| `app.main` / `model_manager` / `inference_limiter` 可导入 | ✅ |
+| `pip check` 仅缺 basic-pitch→tensorflow 这一条**有意**未满足的声明 | ✅ |
+| 依赖探针输出非空（防空 stdin 假通过） | ✅ |
 
-输出 `docker-verification/build-info.json`（Python / 依赖版本 / `tensorflow_present`）、
-`image-info.txt`（镜像 Id、大小、Top 12 层）。
+## 3. 镜像安全扫描（步骤 14，success）
 
-## 3. 预期结果（不是实测，标记为预测）
+`scan-secrets.sh <image>` 通过：镜像内无 `/app/.env`、无 `.git`、无 `*.map`、无
+`change-me-in-production` 落到 `config.py` 之外、无私钥；并打印 `image_uid`（当前为 0，见 §5）。
 
-| 指标 | 预测 | 依据 |
-| --- | --- | --- |
-| 镜像大小 | 1.2–1.8 GB | 无 TF；onnxruntime + librosa + numpy + 前端 0.4 MB |
-| 构建耗时（冷） | 6–12 分钟 | pip 安装 librosa/numba/onnxruntime；使用 gha 缓存后 2–4 分钟 |
-| Python | 3.11.x | `python:3.11-slim` |
-| 推理后端 | onnxruntime CPU | `--no-deps` + 显式 `nmp.onnx` |
-| TF | 不存在 | 构建期断言 + 镜像检查双保险 |
+## 4. 失败→修复链路（本阶段真实发生）
 
-若实际超出上述范围，报告将改为实测值并分析原因（不允许为了缩小镜像删除运行依赖）。
+| Run | 失败点 | 根因 | 修复 |
+| --- | --- | --- | --- |
+| `45817337637` | 步骤 5 Secret scan | 扫描把文档中的占位符 `change-me-in-production` 当泄漏（`.env.example`、`docker-compose.yml`、配置文件、测试） | 改为路径白名单，只报告白名单外的使用 |
+| `45817671769` | 步骤 11 Build image | `.dockerignore` 排除了 `frontend/dist`，而 Dockerfile 要 `COPY` 它 | 从 ignore 中移除；新增 `verify-context.py` 在构建前校验每个 COPY 源 |
+| `45818307503` | 步骤 13 Verify image | `docker run ... - <<PY` 缺少 `-i` → python 收到空 stdin，断言**静默通过**；随后 `pip check` 因 basic-pitch 声明 TF 而失败 | 加 `-i` 并校验探针输出非空；`pip check` 精确放行 basic-pitch→tensorflow 一条，其余仍失败 |
+| `45819026067` | — | — | ✅ 全绿 |
 
-## 4. 已知风险
+> 第 3 条尤其关键：一个"静默通过"的门禁比失败的门禁更危险。这也是为什么
+> `verify-image.sh` 现在会检查探针是否真的产出了 JSON。
 
-| 风险 | 说明 |
+## 5. 已知问题
+
+| 项 | 说明 |
 | --- | --- |
-| `requirements.txt` 新增的 `scikit-learn` / `mir-eval` / `resampy` 与 py3.11 wheel 兼容性 | 均有 cp311 wheel；CI 会以实际安装结果为准 |
-| `--no-deps` 安装可能缺少某个隐式依赖 | 由 `import basic_pitch` + 真实推理双重验证；缺依赖会直接失败而不是静默降级 |
-| 前端 dist 未生成导致 COPY 失败 | 工作流第 7 步先断言 `index.html` 存在 |
-
-## 5. 关闭条件
-
-在 GitHub Actions 上出现一次绿色 `docker-verify` 运行，且产物中：
-
-- `build-info.json.tensorflow_present == false`
-- `image-info.txt` 有镜像大小
-- `verify-image` 步骤输出 `IMAGE VERIFY OK`
-
-即视为本报告通过。当前不具备该证据。
+| 镜像内以 root 运行 | `image_uid: 0`。Railway 卷默认 root 拥有，贸然改非 root 可能导致 `/data` 不可写；C.2.2 评估 |
+| 精确镜像大小 | 在产物 `docker-verification/image-info.txt`，本机无 GitHub 凭据无法读取（HTTP 401），未编造数值 |
+| 冷构建耗时 | 本次 28 s 是复用 gha 层缓存；首次冷构建（run 2）在 2 分钟内失败于 COPY，未得到完整冷构建时长 |

@@ -1,50 +1,52 @@
 # V1.1-C.2.1 · 04 容器运行报告
 
-> **Container Runtime: NOT EXECUTED**（无 Docker 运行时；CI 未触发）
+> **Container Runtime: EXECUTED ✅**（GitHub Actions run `45819026067`）
 
 ---
 
-## 1. 状态
+## 1. 端口注入
 
-| 项 | 值 |
-| --- | --- |
-| 容器启动 | ⛔ 未执行 |
-| PORT 注入（8000 / 8123） | ⛔ 未执行（脚本已就绪） |
-| `/health` | ⛔ 未执行 |
-| `/ready` | ⛔ 未执行 |
-| 容器日志 | ⛔ 无 |
+| 测试 | 做法 | 结果 | 耗时 |
+| --- | --- | --- | --- |
+| 非默认端口 | `-e PORT=8123 -p 8123:8123` | ✅ `/health` 200；并**断言容器内 8000 未监听** | 21 s |
+| 默认端口 + 卷 | `-e PORT=8000 -p 8000:8000 -v <volume>:/data` | ✅ 启动成功 | <1 s |
 
-## 2. CI 会执行的容器测试（可复核）
+关键点：如果 Dockerfile 仍然硬编码 8000，`PORT=8123` 的容器不会在 8123 应答，
+测试会直接失败。本次通过，说明 `exec ... --port "${PORT:-8000}"` 生效。
 
-工作流与脚本已经把每一步写成可独立运行的命令：
+## 2. 健康与就绪
 
-| 步骤 | 脚本 | 断言 |
-| --- | --- | --- |
-| 非默认端口 | 工作流内联 | 容器 `-e PORT=8123 -p 8123:8123`，`/health` 200；并断言容器内 **8000 端口未监听**（否则说明 PORT 被忽略） |
-| 默认端口 + 卷 | 工作流内联 | `-e PORT=8000 -v volume:/data` |
-| 就绪 | `scripts/docker/wait-ready.sh` | 轮询 `/health` 与 `/ready`，最多 300 s；`ready==true` 且 `model.status=ready`、`storage.ok=true`、`inference.capacity>=1`；超时打印容器日志并失败 |
-| 运行时快照 | 工作流内联 | `runtime-info.json`（镜像、启动时间、重启次数）+ `docker stats` 一行 |
+| 检查 | 脚本 | 结果 | 耗时 |
+| --- | --- | --- | --- |
+| `/health` | 工作流内联 + `wait-ready.sh` | ✅ 200 | 含在 21 s |
+| `/ready` | `wait-ready.sh` | ✅ `ready: true`；`model.status=ready`、`storage.ok=true`、`inference.capacity ≥ 1` | 21 s（含模型加载 + 预热） |
 
-`wait-ready.sh` 的判定是**硬失败**：模型未预热不会被当成 ready。
+`wait-ready.sh` 是硬判定：模型未完成预热时 `/ready` 不会返回 `true`，
+脚本最多等 300 s，超时会打印容器日志并退出码 1（不会无限等待）。
 
-## 3. C.2 的本地等价结果（不是容器，仅供参考）
+## 3. 运行时快照
 
-C.2 用同一启动命令在宿主进程上验证过：
+步骤 19（2 s）写出 `docker-verification/runtime-info.json`（镜像名、启动时间、重启次数）
+与 `container-stats.txt`（`docker stats` 一行 CPU/内存）。
+
+具体数值位于 CI 产物中；本机无 GitHub 凭据无法读取（见 §5），未编造。
+
+## 4. 日志
+
+- 容器日志在失败时才导出（`Container logs on failure` 步骤，本次 skipped = 没有失败）。
+- `graceful-shutdown.txt` 中保留了最后 40 行关闭日志（见 06 报告）。
+- 全程日志中无 `Traceback`（`verify-graceful-shutdown.sh` 断言）。
+
+## 5. 无法读取的数值（如实说明）
+
+GitHub 的 artifact/日志下载接口需要仓库权限：
 
 ```text
-startup 9.04 s → /ready 200 (model ready, load 2.663 s, warmup 2.044 s)
-→ upload 201 → job completed 4 notes → restart → document still readable
+GET /repos/engernages-lab/03/actions/artifacts/15117441072/zip → 401 Requires authentication
+GET /repos/engernages-lab/03/actions/jobs/<id>/logs           → 403 Must have admin rights
 ```
 
-这证明应用层逻辑正确，但**不能**替代容器证据（端口映射、卷挂载、PID 1 信号、镜像内依赖都不同）。
-
-## 4. 关闭条件
-
-绿色 `docker-verify` 运行，产物包含：
-
-- `health-check.json`（200）
-- `ready-check.json`（`ready: true`，`model.status == "ready"`）
-- `runtime-info.json`
-- 日志中无 `Traceback`
-
-当前不具备该证据。
+因此本报告只能给出**步骤级**证据（全部 success + 耗时），
+镜像大小、`ready` 返回的 `load_seconds`/`warmup_seconds`、`docker stats` 数值
+保留在产物 `docker-verification-45819026067`（15 KB，保留 14 天）中。
+用户可在 run 页面直接下载查看，无需向我提供任何凭据。
