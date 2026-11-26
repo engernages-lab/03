@@ -116,11 +116,15 @@ railway login                                   # 浏览器授权一次
 railway up --service pocketscore-api            # 仓库根执行，railway.json 已就绪
 ```
 
-控制台需设置（一次性）：`POCKETSCORE_ENVIRONMENT=staging`、`SESSION_SECRET`、
-`TOKEN_ENCRYPTION_KEY`、**`ACCESS_GATE_TOKEN`**（不设则容器起不来）、
-`CORS_ORIGINS=https://engernages-lab.github.io`、`ALLOW_PRIVATE_NETWORK_SOURCES=false`、
-`DATABASE_URL=sqlite:////data/pocketscore.db`、`STORAGE_DIR=/data/storage`、
-`MODEL_PRELOAD=true`、`MAX_UPLOAD_MB=50`；Volume 挂 `/data`。
+控制台需设置（一次性，**名称必须带 `POCKETSCORE_` 前缀，代码没有别名**）：
+`POCKETSCORE_ENVIRONMENT=staging`、`POCKETSCORE_SESSION_SECRET`、
+`POCKETSCORE_TOKEN_ENCRYPTION_KEY`、**`POCKETSCORE_ACCESS_GATE_TOKEN`**（不设则容器起不来）、
+`POCKETSCORE_CORS_ORIGINS=https://engernages-lab.github.io`、`POCKETSCORE_ALLOW_PRIVATE_NETWORK_SOURCES=false`、
+`POCKETSCORE_DATABASE_URL=sqlite:////data/pocketscore.db`、`POCKETSCORE_STORAGE_DIR=/data/storage`、
+`POCKETSCORE_MODEL_PRELOAD=true`、`POCKETSCORE_MAX_UPLOAD_MB=50`；Volume 挂 `/data`。
+
+> 注意 `sqlite:////data/...` 是**四条斜杠**（绝对路径）。写成三条斜杠会落到容器内
+> `/app/data/`，重启即丢数据（C.2.2.1 实测确认）。
 
 部署后立刻验收（两条都已就绪）：
 
