@@ -16,6 +16,10 @@ services:
       POCKETSCORE_CORS_ORIGINS: "http://localhost:8000"
       POCKETSCORE_ALLOW_PRIVATE_NETWORK_SOURCES: "true"
       POCKETSCORE_MAX_UPLOAD_MB: "200"
+      # Staging/production refuse to start without an access gate credential.
+      # Replace before exposing this stack to anything but localhost:
+      #   python -c "import secrets; print(secrets.token_hex(24))"
+      POCKETSCORE_ACCESS_GATE_TOKEN: "local-compose-only-change-me"
       # Set a real Fernet key in production:
       # POCKETSCORE_TOKEN_ENCRYPTION_KEY: "<base64 32 bytes>"
       POCKETSCORE_SESSION_SECRET: "change-me-in-production"

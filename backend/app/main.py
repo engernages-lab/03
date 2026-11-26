@@ -50,6 +50,14 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json",
     )
 
+    # Access gate first, CORS second: middleware added later wraps earlier, so
+    # CORS stays outermost and can answer preflight without credentials while
+    # every real request still passes through the gate.
+    from app.core.access_gate import AccessGateMiddleware, build_gate
+
+    _gate = build_gate(settings)
+    app.add_middleware(AccessGateMiddleware, gate=_gate)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -58,6 +66,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
         expose_headers=[REQUEST_ID_HEADER],
     )
+    app.state.access_gate = _gate
 
     @app.middleware("http")
     async def request_context(request: Request, call_next: Callable) -> Response:
@@ -190,6 +199,8 @@ def create_app() -> FastAPI:
             for problem in problems:
                 logger.error("configuration error: %s", problem)
             raise RuntimeError("refusing to start with insecure configuration: " + "; ".join(problems))
+
+        logger.info("access gate: %s", _gate.describe())
 
         if settings.model_preload:
             from app.services.audio.model_manager import model_manager

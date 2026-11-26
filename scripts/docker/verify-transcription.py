@@ -27,7 +27,13 @@ from pathlib import Path
 
 
 def request(url: str, *, method: str = "GET", data: bytes | None = None, headers: dict | None = None):
-    req = urllib.request.Request(url, data=data, method=method, headers=headers or {})
+    # The staging container runs behind the access gate; the CI token is passed
+    # in through the environment so it never appears in argv or logs.
+    token = os.environ.get("POCKETSCORE_ACCESS_GATE_TOKEN")
+    merged = dict(headers or {})
+    if token:
+        merged.setdefault("Authorization", f"Bearer {token}")
+    req = urllib.request.Request(url, data=data, method=method, headers=merged)
     with urllib.request.urlopen(req, timeout=120) as response:
         body = response.read()
         return response.status, (json.loads(body) if body else None)

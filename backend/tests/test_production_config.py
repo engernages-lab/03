@@ -19,6 +19,8 @@ def build(**overrides) -> Settings:
         "token_encryption_key": "ZmFrZS1mZXJuZXQta2V5LWZvci10ZXN0cy0xMjM0NTY=",
         "cors_origins": ["https://engernages-lab.github.io"],
         "allow_private_network_sources": False,
+        # staging must be behind the access gate (V1.1-C.2.2)
+        "access_gate_token": "staging-access-token-for-tests-0123456789",
     }
     base.update(overrides)
     return Settings(**base)

@@ -119,6 +119,15 @@ class Settings(BaseSettings):
     allow_private_network_sources: bool = True  # Navidrome/LAN servers
     ffprobe_timeout_seconds: int = 60
 
+    # -- staging access gate (V1.1-C.2.2) ---------------------------------
+    # The backend has no user accounts until C.5, so a deployed environment must
+    # be behind a shared credential. mode=auto enables the gate for
+    # staging/production and leaves development/test open.
+    access_gate_mode: str = "auto"  # auto | token | basic | off
+    access_gate_token: Optional[str] = None
+    access_gate_user: Optional[str] = None
+    access_gate_password: Optional[str] = None
+
     # -- inference capacity (C.2) -----------------------------------------
     # One CPU inference at a time is the safe default: a single job peaks at
     # ~262 MB, so concurrency multiplies memory without adding throughput.
@@ -213,6 +222,30 @@ class Settings(BaseSettings):
         if self.allow_private_network_sources:
             problems.append(
                 "POCKETSCORE_ALLOW_PRIVATE_NETWORK_SOURCES must be false outside a trusted LAN"
+            )
+        mode = (self.access_gate_mode or "auto").strip().lower()
+        if mode not in {"auto", "token", "basic", "off"}:
+            problems.append("POCKETSCORE_ACCESS_GATE_MODE must be one of auto|token|basic|off")
+        if mode == "off":
+            problems.append(
+                "POCKETSCORE_ACCESS_GATE_MODE=off is not allowed in staging/production: this API "
+                "has no user authentication yet and must not be exposed unauthenticated"
+            )
+        elif mode == "token" and not self.access_gate_token:
+            problems.append("POCKETSCORE_ACCESS_GATE_TOKEN is required when the gate mode is token")
+        elif mode == "basic":
+            if not (self.access_gate_user and self.access_gate_password):
+                problems.append(
+                    "POCKETSCORE_ACCESS_GATE_USER and POCKETSCORE_ACCESS_GATE_PASSWORD are both "
+                    "required when the gate mode is basic"
+                )
+        elif mode == "auto" and not (
+            self.access_gate_token or (self.access_gate_user and self.access_gate_password)
+        ):
+            problems.append(
+                "no access gate credential configured: this API has no user authentication yet, so "
+                "staging/production refuses to start without POCKETSCORE_ACCESS_GATE_TOKEN or "
+                "POCKETSCORE_ACCESS_GATE_USER/PASSWORD"
             )
         return problems
 

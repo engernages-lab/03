@@ -37,8 +37,13 @@ if not PYTHON.exists():  # pragma: no cover - POSIX checkout
 FIXTURE = ROOT / "tests" / "fixtures" / "melody.wav"
 
 
+TOKEN = "smoke-access-token-0123456789abcdef"
+
+
 def http(url: str, method: str = "GET", data: bytes | None = None, headers: dict | None = None):
-    request = urllib.request.Request(url, data=data, method=method, headers=headers or {})
+    merged = dict(headers or {})
+    merged.setdefault("Authorization", f"Bearer {TOKEN}")
+    request = urllib.request.Request(url, data=data, method=method, headers=merged)
     with urllib.request.urlopen(request, timeout=30) as response:
         body = response.read()
         return response.status, json.loads(body) if body else None
@@ -71,6 +76,8 @@ def spawn(port: int, data_dir: Path, log_path: Path) -> subprocess.Popen:
         "POCKETSCORE_STORAGE_DIR": str(data_dir / "storage"),
         "POCKETSCORE_MODEL_PRELOAD": "true",
         "POCKETSCORE_MAX_UPLOAD_MB": "25",
+        # staging refuses to boot without the access gate (V1.1-C.2.2)
+        "POCKETSCORE_ACCESS_GATE_TOKEN": "smoke-access-token-0123456789abcdef",
     }
     log = open(log_path, "w", encoding="utf-8")
     return subprocess.Popen(

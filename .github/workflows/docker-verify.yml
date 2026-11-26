@@ -19,6 +19,7 @@ on:
       - "frontend/vite.config.ts"
       - "tests/fixtures/**"
       - "scripts/docker/**"
+      - "scripts/deploy/**"
       - ".github/workflows/docker-verify.yml"
       - "railway.json"
   push:
@@ -31,6 +32,7 @@ on:
       - "frontend/vite.config.ts"
       - "tests/fixtures/**"
       - "scripts/docker/**"
+      - "scripts/deploy/**"
       - ".github/workflows/docker-verify.yml"
       - "railway.json"
 
@@ -58,7 +60,7 @@ jobs:
       - name: Syntax-check verification scripts
         run: |
           set -euo pipefail
-          for script in scripts/docker/*.sh; do
+          for script in scripts/docker/*.sh scripts/deploy/*.sh; do
             bash -n "$script"
             echo "syntax ok: $script"
           done
@@ -70,10 +72,13 @@ jobs:
         run: |
           set -euo pipefail
           SESSION=$(openssl rand -base64 48 | tr -d '\n')
+          GATE=$(openssl rand -hex 24)
           FERNET=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n')
           echo "::add-mask::$SESSION"
+          echo "::add-mask::$GATE"
           echo "::add-mask::$FERNET"
           echo "TEST_SESSION_SECRET=$SESSION" >> "$GITHUB_ENV"
+          echo "TEST_ACCESS_TOKEN=$GATE" >> "$GITHUB_ENV"
           echo "TEST_TOKEN_KEY=$FERNET" >> "$GITHUB_ENV"
           echo "RUN_ID=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
           echo "VOLUME=pocketscore-c21-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
@@ -151,6 +156,7 @@ jobs:
             -e "POCKETSCORE_TOKEN_ENCRYPTION_KEY=${TEST_TOKEN_KEY}" \
             -e POCKETSCORE_CORS_ORIGINS=http://127.0.0.1:8123 \
             -e POCKETSCORE_ALLOW_PRIVATE_NETWORK_SOURCES=false \
+            -e "POCKETSCORE_ACCESS_GATE_TOKEN=${TEST_ACCESS_TOKEN}" \
             -e POCKETSCORE_DATABASE_URL=sqlite:////data/pocketscore.db \
             -e POCKETSCORE_STORAGE_DIR=/data/storage \
             -e POCKETSCORE_MODEL_PRELOAD=true \
@@ -186,6 +192,7 @@ jobs:
             -e "POCKETSCORE_TOKEN_ENCRYPTION_KEY=${TEST_TOKEN_KEY}" \
             -e POCKETSCORE_CORS_ORIGINS=http://127.0.0.1:8000 \
             -e POCKETSCORE_ALLOW_PRIVATE_NETWORK_SOURCES=false \
+            -e "POCKETSCORE_ACCESS_GATE_TOKEN=${TEST_ACCESS_TOKEN}" \
             -e POCKETSCORE_DATABASE_URL=sqlite:////data/pocketscore.db \
             -e POCKETSCORE_STORAGE_DIR=/data/storage \
             -e POCKETSCORE_MODEL_PRELOAD=true \
@@ -198,6 +205,12 @@ jobs:
 
       - name: Wait for readiness
         run: bash scripts/docker/wait-ready.sh http://127.0.0.1:8000 "pocketscore-c21-${RUN_ID}-main" 300
+
+      # HARD DEPLOYMENT GATE: an unauthenticated staging API must be unreachable.
+      # If the gate is off (or misconfigured) this step fails the build, so a
+      # publicly reachable backend can never be produced by this pipeline.
+      - name: Access gate enforced (anonymous must be blocked)
+        run: bash scripts/deploy/verify-access-gate.sh http://127.0.0.1:8000 "$TEST_ACCESS_TOKEN"
 
       - name: Container runtime info
         run: |
