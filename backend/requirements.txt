@@ -1,7 +1,12 @@
 # PocketScore AI - backend runtime dependencies
-# Target interpreter: CPython 3.9 (verified on 3.9.13).
+# Target interpreter: CPython 3.9 (verified on 3.9.13) **and** 3.11 (container).
 # Ranges are deliberately permissive so the resolver never backtracks on a
 # Python 3.9 index; every package below has a py3.9-compatible release.
+#
+# The transcription model itself lives in requirements-model.txt: on Linux +
+# Python 3.11 `pip install basic-pitch` would pull TensorFlow (~600 MB) even
+# though this project runs the ONNX graph. Installing it with --no-deps and
+# listing its non-TF closure here keeps the image lean and deterministic.
 
 # --- Web framework / API ---
 fastapi>=0.110,<0.116
@@ -38,10 +43,16 @@ librosa>=0.10.1,<0.11
 soundfile>=0.12,<0.13
 imageio-ffmpeg>=0.4.9,<0.6
 
-# --- Audio transcription model (A.10) ---
-# Basic Pitch (ICASSP 2022, Apache-2.0). On Windows + Python < 3.11 the package
-# resolves onnxruntime instead of TensorFlow; on other platforms it wants TF.
-basic-pitch>=0.4,<0.5
+# --- Basic Pitch runtime closure (model package installed separately) --------
+# These are basic-pitch 0.4.0's non-TensorFlow dependencies; without them the
+# `--no-deps` install would import-fail inside the container.
+mir-eval>=0.6,<0.8
+resampy>=0.2.2,<0.4.3
+scikit-learn>=1.0
+scipy>=1.4.1,<1.15
+typing-extensions>=4.6
+
+# --- ONNX inference runtime (the container's only model backend) -------------
 onnxruntime>=1.16,<2
 
 # --- Test tooling ---

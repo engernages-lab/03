@@ -1,0 +1,7 @@
+# The audio transcription model package.
+#
+# Install with --no-deps (Dockerfile does this) so pip does not pull TensorFlow
+# on Linux/Python 3.11: the platform marker in basic-pitch 0.4.0 asks for
+# tensorflow>=2.4.1 there, but this project runs the shipped nmp.onnx graph via
+# onnxruntime. The non-TF dependency closure is pinned in requirements.txt.
+basic-pitch>=0.4,<0.5

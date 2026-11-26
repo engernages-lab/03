@@ -1,144 +1,288 @@
-name: Docker verify
+name: Docker verify (V1.1-C.2.1)
 
-# V1.1-C.2: the image build could not be executed on the developer machine
-# (no Docker runtime). This workflow is the executable path for that gate:
-# build the real image, boot it with a Railway-style $PORT and a mounted
-# volume, run a real transcription, then verify data survives a restart.
+# Real Linux container gate: build the image, boot it with a Railway-style
+# $PORT, run an actual Basic Pitch transcription, rebuild the container on the
+# same volume and check the data survived, then verify SIGTERM shutdown.
 #
-# Manual dispatch by default so it never competes with the normal CI matrix.
+# Manual dispatch is the primary entry point: the workflow is intentionally
+# conservative about spending CI minutes on full AI image builds.
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
+  pull_request:
+    branches: [main, "pocketscore-v1.1-*"]
     paths:
-      - "backend/Dockerfile"
-      - "backend/requirements.txt"
-      - "railway.json"
+      - "backend/**"
+      - "frontend/src/**"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "frontend/vite.config.ts"
+      - "tests/fixtures/**"
+      - "scripts/docker/**"
       - ".github/workflows/docker-verify.yml"
+      - "railway.json"
+  push:
+    branches: ["pocketscore-v1.1-b", main]
+    paths:
+      - "backend/**"
+      - "frontend/src/**"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "frontend/vite.config.ts"
+      - "tests/fixtures/**"
+      - "scripts/docker/**"
+      - ".github/workflows/docker-verify.yml"
+      - "railway.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  OUT_DIR: docker-verification
+  IMAGE: pocketscore-ai:c2-verify
 
 jobs:
-  docker:
+  docker-verify:
+    name: docker-verify
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
+
     steps:
       - uses: actions/checkout@v4
 
+      # ---------------------------------------------------------------- shell
+      - name: Syntax-check verification scripts
+        run: |
+          set -euo pipefail
+          for script in scripts/docker/*.sh; do
+            bash -n "$script"
+            echo "syntax ok: $script"
+          done
+          python3 -m py_compile scripts/docker/verify-transcription.py
+          echo "syntax ok: verify-transcription.py"
+
+      # --------------------------------------------------------------- secrets
+      - name: Generate throwaway test secrets
+        run: |
+          set -euo pipefail
+          SESSION=$(openssl rand -base64 48 | tr -d '\n')
+          FERNET=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n')
+          echo "::add-mask::$SESSION"
+          echo "::add-mask::$FERNET"
+          echo "TEST_SESSION_SECRET=$SESSION" >> "$GITHUB_ENV"
+          echo "TEST_TOKEN_KEY=$FERNET" >> "$GITHUB_ENV"
+          echo "RUN_ID=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+          echo "VOLUME=pocketscore-c21-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+
+      - name: Secret scan (pre-build)
+        run: bash scripts/docker/scan-secrets.sh
+
+      # --------------------------------------------------------------- frontend
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: "20"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Build frontend bundle (the image copies dist/)
+      - name: Install frontend dependencies (lockfile)
         working-directory: frontend
+        run: npm ci
+
+      - name: Production build
+        working-directory: frontend
+        env:
+          VITE_BASE_PATH: /03/
+        run: npm run build
+
+      - name: Verify frontend artefacts (required by the image COPY)
         run: |
-          npm ci
-          VITE_BASE_PATH=/03/ npm run build
-          test -f dist/index.html
+          set -euo pipefail
+          test -f frontend/dist/index.html
+          test -d frontend/dist/assets
+          # the Dockerfile copies frontend/dist, so a missing bundle must fail here
+          map_count=$(find frontend/dist -name '*.map' | wc -l)
+          echo "sourcemaps in dist: $map_count"
+          test "$map_count" -eq 0
+          du -sh frontend/dist
+
+      # ----------------------------------------------------------------- docker
+      - uses: docker/setup-buildx-action@v3
 
       - name: Build image
-        run: docker build -f backend/Dockerfile -t pocketscore-api:ci .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          tags: ${{ env.IMAGE }}
+          load: true
+          cache-from: type=gha,scope=pocketscore-docker
+          cache-to: type=gha,mode=max,scope=pocketscore-docker
+          build-args: |
+            BUILD_REVISION=${{ github.sha }}
 
-      - name: Report image size
-        run: docker image ls pocketscore-api:ci --format '{{.Size}}'
+      - name: Verify image contents (deps, model, ffmpeg, dist)
+        run: bash scripts/docker/verify-image.sh "$IMAGE"
 
-      - name: Boot container with Railway-style PORT and a volume
+      - name: Image security scan
+        run: bash scripts/docker/scan-secrets.sh "$IMAGE"
+
+      # --------------------------------------------------------------- run: PORT
+      - name: Create test volume
+        run: docker volume create "$VOLUME"
+
+      - name: PORT injection - non-default port 8123
         run: |
-          docker volume create psdata
-          docker run -d --name ps \
-            -p 8080:8080 \
-            -e PORT=8080 \
+          set -euo pipefail
+          name="pocketscore-c21-${RUN_ID}-port"
+          docker run -d --name "$name" -p 127.0.0.1:8123:8123 \
+            -e PORT=8123 \
             -e POCKETSCORE_ENVIRONMENT=staging \
-            -e POCKETSCORE_DEBUG=false \
             -e POCKETSCORE_LOG_JSON=true \
-            -e POCKETSCORE_SESSION_SECRET="ci-session-secret-0123456789abcdefghij" \
-            -e POCKETSCORE_TOKEN_ENCRYPTION_KEY="Y2ktZmVybmV0LWtleS0zMi1ieXRlcy1sb25nISE=" \
-            -e POCKETSCORE_CORS_ORIGINS=https://engernages-lab.github.io \
+            -e "POCKETSCORE_SESSION_SECRET=${TEST_SESSION_SECRET}" \
+            -e "POCKETSCORE_TOKEN_ENCRYPTION_KEY=${TEST_TOKEN_KEY}" \
+            -e POCKETSCORE_CORS_ORIGINS=http://127.0.0.1:8123 \
             -e POCKETSCORE_ALLOW_PRIVATE_NETWORK_SOURCES=false \
             -e POCKETSCORE_DATABASE_URL=sqlite:////data/pocketscore.db \
             -e POCKETSCORE_STORAGE_DIR=/data/storage \
             -e POCKETSCORE_MODEL_PRELOAD=true \
-            -e POCKETSCORE_MAX_UPLOAD_MB=25 \
-            -v psdata:/data \
-            pocketscore-api:ci
-
-      - name: Wait for /health (model preload can take ~15 s on a cold CPU)
-        run: |
+            -v "${VOLUME}:/data" \
+            "$IMAGE"
           for i in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:8080/health >/dev/null; then echo "healthy after ${i}s"; exit 0; fi
+            if curl -fsS http://127.0.0.1:8123/health >/dev/null; then
+              echo "PORT=8123 honoured after ${i} polls"
+              docker port "$name"
+              break
+            fi
             sleep 2
           done
-          docker logs ps
-          exit 1
+          curl -fsS http://127.0.0.1:8123/health > /dev/null || (docker logs "$name"; exit 1)
+          # the container must NOT be listening on 8000
+          if docker exec "$name" sh -c 'python -c "import socket,sys; s=socket.socket(); sys.exit(0 if s.connect_ex((\"127.0.0.1\",8000))==0 else 1)"'; then
+            echo "::error::service also listening on 8000 - PORT was ignored"
+            exit 1
+          fi
+          docker stop --time 30 "$name" >/dev/null
+          docker rm "$name" >/dev/null
 
-      - name: Ready (model + storage + inference capacity)
-        run: |
-          curl -fsS http://127.0.0.1:8080/ready | tee /tmp/ready.json
-          python3 - <<'PY'
-          import json
-          data = json.load(open("/tmp/ready.json"))
-          assert data["checks"]["model"]["status"] == "ready", data["checks"]["model"]
-          assert data["checks"]["storage"]["ok"] is True
-          assert data["checks"]["inference"]["capacity"] >= 1
-          print("ready ok")
-          PY
-
-      - name: Real transcription inside the container
+      - name: Start container on the default port with the volume
         run: |
           set -euo pipefail
-          asset=$(curl -fsS -F "file=@tests/fixtures/melody.wav" http://127.0.0.1:8080/api/v1/audio/upload)
-          echo "$asset"
-          asset_id=$(echo "$asset" | python3 -c 'import json,sys; print(json.load(sys.stdin)["asset_id"])')
-          job=$(curl -fsS -X POST -H 'content-type: application/json' \
-            -d "{\"asset_id\":\"$asset_id\"}" http://127.0.0.1:8080/api/v1/transcription/jobs)
-          job_id=$(echo "$job" | python3 -c 'import json,sys; print(json.load(sys.stdin)["job_id"])')
-          result=$(curl -fsS -X POST http://127.0.0.1:8080/api/v1/transcription/jobs/$job_id/run)
-          echo "$result" > /tmp/job.json
-          python3 - <<'PY'
-          import json
-          data = json.load(open("/tmp/job.json"))
-          assert data["status"] == "completed", data
-          assert data["events_produced"] > 0, data
-          print("transcribed", data["events_produced"], "notes")
-          PY
-
-      - name: Reject a bad upload over the wire
-        run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" -F "file=@README.md;filename=evil.exe" \
-            http://127.0.0.1:8080/api/v1/audio/upload)
-          test "$code" = "415" || (echo "expected 415, got $code"; exit 1)
-
-      - name: Restart and verify the volume survived
-        run: |
-          docker stop ps
-          docker rm ps
-          docker run -d --name ps \
-            -p 8080:8080 -e PORT=8080 \
+          name="pocketscore-c21-${RUN_ID}-main"
+          docker run -d --name "$name" -p 127.0.0.1:8000:8000 \
+            -e PORT=8000 \
             -e POCKETSCORE_ENVIRONMENT=staging \
-            -e POCKETSCORE_SESSION_SECRET="ci-session-secret-0123456789abcdefghij" \
-            -e POCKETSCORE_TOKEN_ENCRYPTION_KEY="Y2ktZmVybmV0LWtleS0zMi1ieXRlcy1sb25nISE=" \
-            -e POCKETSCORE_CORS_ORIGINS=https://engernages-lab.github.io \
+            -e POCKETSCORE_DEBUG=false \
+            -e POCKETSCORE_LOG_JSON=true \
+            -e "POCKETSCORE_SESSION_SECRET=${TEST_SESSION_SECRET}" \
+            -e "POCKETSCORE_TOKEN_ENCRYPTION_KEY=${TEST_TOKEN_KEY}" \
+            -e POCKETSCORE_CORS_ORIGINS=http://127.0.0.1:8000 \
             -e POCKETSCORE_ALLOW_PRIVATE_NETWORK_SOURCES=false \
             -e POCKETSCORE_DATABASE_URL=sqlite:////data/pocketscore.db \
             -e POCKETSCORE_STORAGE_DIR=/data/storage \
-            -v psdata:/data pocketscore-api:ci
-          for i in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:8080/health >/dev/null; then break; fi
-            sleep 2
-          done
-          total=$(curl -fsS "http://127.0.0.1:8080/api/v1/audio/assets?limit=5" \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin)["total"])')
-          echo "assets after restart: $total"
-          test "$total" -ge 1
+            -e POCKETSCORE_MODEL_PRELOAD=true \
+            -e POCKETSCORE_MAX_UPLOAD_MB=50 \
+            -e POCKETSCORE_MAX_CONCURRENT_INFERENCES=1 \
+            -e POCKETSCORE_INFERENCE_TIMEOUT_SECONDS=300 \
+            -v "${VOLUME}:/data" \
+            "$IMAGE"
+          echo "started $name"
 
-      - name: Graceful shutdown
+      - name: Wait for readiness
+        run: bash scripts/docker/wait-ready.sh http://127.0.0.1:8000 "pocketscore-c21-${RUN_ID}-main" 300
+
+      - name: Container runtime info
         run: |
-          docker stop --time 30 ps
-          docker logs ps 2>&1 | tail -20
-          docker logs ps 2>&1 | grep -qiE "shutting down|finished server process|Application shutdown complete" \
-            || (echo "no graceful shutdown log"; exit 1)
+          docker inspect "pocketscore-c21-${RUN_ID}-main" \
+            --format '{"image":"{{.Config.Image}}","started":"{{.State.StartedAt}}","restarts":{{.RestartCount}}}' \
+            > "$OUT_DIR/runtime-info.json"
+          docker stats --no-stream --format '{{.Name}} cpu={{.CPUPerc}} mem={{.MemUsage}}' \
+            | tee "$OUT_DIR/container-stats.txt" || true
 
-      - name: Dump logs on failure
+      # ------------------------------------------------------------------- AI
+      - name: Real Basic Pitch transcription
+        run: |
+          python3 scripts/docker/verify-transcription.py \
+            --base-url http://127.0.0.1:8000 \
+            --audio tests/fixtures/melody.wav \
+            --out "$OUT_DIR/transcription-result.json"
+
+      - name: Reject an unsupported upload
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -F "file=@README.md;filename=evil.exe" http://127.0.0.1:8000/api/v1/audio/upload)
+          echo "unsupported extension -> HTTP $code"
+          test "$code" = "415"
+
+      # --------------------------------------------------------- persistence
+      - name: Stop the main container before the rebuild test
+        run: |
+          docker stop --time 30 "pocketscore-c21-${RUN_ID}-main" >/dev/null
+          docker rm "pocketscore-c21-${RUN_ID}-main" >/dev/null
+
+      - name: Persistence across a container rebuild
+        run: bash scripts/docker/verify-persistence.sh "$IMAGE" "$VOLUME" "$RUN_ID" 8000
+
+      # ------------------------------------------------------------- shutdown
+      - name: Graceful shutdown on SIGTERM
+        run: bash scripts/docker/verify-graceful-shutdown.sh "$IMAGE" "$VOLUME" "$RUN_ID" 8000
+
+      # ------------------------------------------------------------- auditing
+      - name: Dependency audit
+        run: |
+          set +e
+          docker run --rm --entrypoint python "$IMAGE" -m pip check > "$OUT_DIR/pip-check.txt" 2>&1
+          echo "pip check rc=$?"
+          (cd frontend && npm audit --omit=dev --audit-level=critical > "../$OUT_DIR/npm-audit.txt" 2>&1)
+          echo "npm audit rc=$?"
+          cat "$OUT_DIR/pip-check.txt"
+          tail -20 "$OUT_DIR/npm-audit.txt" || true
+          exit 0
+
+      - name: Write summary
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT_DIR"
+          {
+            echo "# Docker verification (V1.1-C.2.1)"
+            echo
+            echo "- commit: \`${{ github.sha }}\`"
+            echo "- run: ${{ github.run_id }} attempt ${{ github.run_attempt }}"
+            echo "- image: $IMAGE"
+            echo
+            for f in build-info.json image-info.txt ready-check.json transcription-result.json persistence-result.json graceful-shutdown.txt; do
+              if [ -f "$OUT_DIR/$f" ]; then
+                echo "## $f"
+                echo '```'
+                head -40 "$OUT_DIR/$f"
+                echo '```'
+              fi
+            done
+          } > "$OUT_DIR/summary.md"
+          cat "$OUT_DIR/summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload verification artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-verification-${{ github.run_id }}
+          path: docker-verification/
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Cleanup test resources
+        if: always()
+        run: bash scripts/docker/cleanup-test-resources.sh "$RUN_ID" "$VOLUME" || true
+
+      - name: Container logs on failure
         if: failure()
-        run: docker logs ps || true
+        run: |
+          for c in $(docker ps -aq --filter "name=pocketscore-c21-"); do
+            echo "=== $c ==="
+            docker logs "$c" 2>&1 | tail -100 || true
+          done

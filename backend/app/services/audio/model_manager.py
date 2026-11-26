@@ -20,6 +20,25 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _resolve_model_path() -> "object":
+    """Return the ONNX model file shipped inside the basic-pitch wheel.
+
+    Falls back to whatever basic-pitch would default to only when the ONNX file
+    is missing, so a packaging change degrades instead of crashing.
+    """
+    from pathlib import Path
+
+    import basic_pitch
+
+    onnx_path = Path(basic_pitch.__file__).parent / "saved_models" / "icassp_2022" / "nmp.onnx"
+    if onnx_path.is_file():
+        return onnx_path
+    from basic_pitch import ICASSP_2022_MODEL_PATH
+
+    logger.warning("nmp.onnx missing, falling back to %s", ICASSP_2022_MODEL_PATH)
+    return ICASSP_2022_MODEL_PATH
+
+
 @dataclass
 class ModelState:
     """Observable lifecycle of the shared model."""
@@ -69,7 +88,6 @@ class ModelManager:
             self._state = ModelState(status="loading")
             started = time.perf_counter()
             try:
-                from basic_pitch import ICASSP_2022_MODEL_PATH
                 from basic_pitch.inference import Model
 
                 from app.services.audio.transcription.inference import (
@@ -78,7 +96,14 @@ class ModelManager:
                     runtime_version,
                 )
 
-                self._model = Model(ICASSP_2022_MODEL_PATH)
+                # Pin the ONNX graph explicitly: basic_pitch picks its default by
+                # availability order (TF > CoreML > TFLite > ONNX), so a stray
+                # TensorFlow install would silently switch the backend. The ONNX
+                # file ships with the wheel and is what the accuracy benchmarks
+                # (V1.1-A) were measured on.
+                model_path = _resolve_model_path()
+                self._model = Model(model_path)
+                self._state.extra["model_path"] = str(model_path)
                 self._state.load_seconds = round(time.perf_counter() - started, 3)
                 self._state.loaded_at = time.time()
                 self._state.model_version = MODEL_VERSION

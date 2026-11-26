@@ -21,7 +21,15 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt ./requirements.txt
-RUN pip install --upgrade pip && pip install -r requirements.txt
+COPY backend/requirements-model.txt ./requirements-model.txt
+# The model package is installed WITHOUT its declared deps: on Linux + Python
+# 3.11 basic-pitch asks for tensorflow (~600 MB) although this project runs the
+# bundled nmp.onnx through onnxruntime. Its non-TF closure is in requirements.txt.
+RUN pip install --upgrade pip \
+    && pip install -r requirements.txt \
+    && pip install --no-deps -r requirements-model.txt \
+    && python -c "import basic_pitch, onnxruntime; print('basic_pitch + onnxruntime OK')" \
+    && python -c "import importlib.util as u; assert u.find_spec('tensorflow') is None, 'TensorFlow leaked into the image'"
 
 COPY backend/app ./app
 COPY backend/alembic ./alembic

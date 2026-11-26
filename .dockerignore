@@ -1,0 +1,54 @@
+# Build context hygiene: keep the image small and stop secrets/artefacts leaking in.
+# Without this file the context is ~1.7 GB (node_modules, .git, caches, .playwright).
+
+# --- vcs / tooling -----------------------------------------------------------
+.git
+.github
+.agents
+.run
+.vscode
+.idea
+*.log
+
+# --- python ------------------------------------------------------------------
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+backend/.venv
+venv
+.pytest-tmp
+**/pytest-of-*
+.pip-cache
+backend/data
+data
+
+# --- node --------------------------------------------------------------------
+**/node_modules
+.npm-cache
+frontend/dist
+frontend/.vite
+test-results
+playwright-report
+.playwright
+
+# --- secrets & local state ---------------------------------------------------
+.env
+.env.*
+!.env.example
+*.p8
+*.pem
+*.key
+**/token_key*
+*.db
+*.db-wal
+*.db-shm
+storage
+
+# --- docs / fixtures not needed at runtime -----------------------------------
+docs
+reports
+tests
+scripts
+node_modules
