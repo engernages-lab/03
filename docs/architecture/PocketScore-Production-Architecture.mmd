@@ -1,0 +1,65 @@
+%% PocketScore AI - production architecture (V1.1-C.1 audit view)
+%% Legend: EXISTING = shipped and verified | PARTIAL = implemented but incomplete
+%%         MISSING = not implemented | PROPOSED = recommended, not built
+flowchart TB
+  subgraph client["Browser (user)"]
+    UI["PocketScore SPA<br/>React 18 + Vite 5<br/>[EXISTING]"]
+    DL["Export: PNG / ZIP / PDF<br/>canvas + blob + file picker<br/>[EXISTING, save-to-disk PARTIAL]"]
+  end
+
+  subgraph pages["GitHub Pages"]
+    STATIC["Static bundle /03/<br/>SPA fallback 404.html<br/>[EXISTING]"]
+    APIENV["VITE_API_BASE_URL<br/>build-time env<br/>[MISSING: unset in repo vars]"]
+  end
+
+  subgraph railway["Railway project (PROPOSED, not deployed)"]
+    EDGE["HTTPS edge / TLS<br/>[PROPOSED]"]
+    API["FastAPI + Uvicorn<br/>84 routes<br/>[EXISTING code, MISSING host]"]
+    AUTH["Authentication / Authorization<br/>[MISSING]"]
+    LIMIT["Rate limit + body cap<br/>[MISSING]"]
+    JOBS["Job runner (BackgroundTasks)<br/>[PARTIAL: no queue, no cap, no timeout]"]
+    FF["FFmpeg decode<br/>imageio-ffmpeg 4.2.2<br/>[EXISTING]"]
+    MODEL["Basic Pitch 0.4.0 + ONNX Runtime 1.19.2<br/>CPUExecutionProvider<br/>[EXISTING]"]
+    DOC["MusicDocument engine<br/>grid / jianpu / MIDI<br/>[EXISTING]"]
+    PG[("PostgreSQL<br/>[PROPOSED]")]
+    VOL[("Volume /data<br/>SQLite + audio files<br/>[EXISTING, single instance only]")]
+    OBJ[("Object storage<br/>[PROPOSED]")]
+    REDIS[("Redis / queue<br/>[PROPOSED]")]
+  end
+
+  subgraph external["External (optional, not configured)"]
+    APPLE["Apple Music<br/>[MISSING: no credentials]"]
+    SPOT["Spotify metadata<br/>[MISSING: no credentials]"]
+    NAVI["Navidrome / Subsonic<br/>[EXISTING adapter, no server]"]
+  end
+
+  UI --> STATIC
+  UI --> APIENV
+  APIENV -.->|"HTTPS + CORS"| EDGE
+  DL --> UI
+  EDGE --> API
+  API --> AUTH
+  API --> LIMIT
+  API --> JOBS
+  API --> DOC
+  JOBS --> FF
+  JOBS --> MODEL
+  MODEL --> DOC
+  API --> PG
+  JOBS --> VOL
+  FF --> VOL
+  JOBS -.-> REDIS
+  API -.-> OBJ
+  API -. optional .-> APPLE
+  API -. optional .-> SPOT
+  API -. optional .-> NAVI
+
+  classDef existing fill:#1f6f43,stroke:#2fbf71,color:#ffffff
+  classDef partial fill:#7a5c00,stroke:#e0a800,color:#ffffff
+  classDef missing fill:#7a1f1f,stroke:#e05252,color:#ffffff
+  classDef proposed fill:#1f3f7a,stroke:#5b8def,color:#ffffff
+
+  class UI,STATIC,API,FF,MODEL,DOC,VOL,DL existing
+  class JOBS partial
+  class APIENV,AUTH,LIMIT,APPLE,SPOT missing
+  class EDGE,PG,OBJ,REDIS,NAVI proposed
