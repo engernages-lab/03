@@ -8,13 +8,16 @@ in-memory database without import side effects.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Generator, Iterator, Optional
+from typing import Generator, Iterator, List, Optional
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import get_settings
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -82,14 +85,54 @@ def session_scope() -> Iterator[Session]:
 
 
 def init_db() -> None:
-    """Create all tables that do not exist yet.
+    """Create all tables that do not exist yet and heal additive columns.
 
     Alembic owns schema evolution in production; ``create_all`` keeps a fresh
-    developer checkout bootable without running migrations first.
+    developer checkout bootable without running migrations first. It does *not*
+    alter existing tables, so an older database would break as soon as a model
+    gains a column - :func:`sync_additive_columns` closes that gap safely.
     """
     from app import models  # noqa: F401  (import registers all mappers)
 
     Base.metadata.create_all(bind=get_engine())
+    sync_additive_columns()
+
+
+def sync_additive_columns() -> List[str]:
+    """Add columns the models declared but the database is missing.
+
+    Only *additive, nullable* columns without defaults are handled: nothing is
+    dropped, renamed or retyped, so the operation is safe to run on every
+    startup and cannot destroy data. Returns the added ``table.column`` names.
+    """
+    import sqlalchemy as sa
+
+    from app import models  # noqa: F401
+
+    engine = get_engine()
+    inspector = sa.inspect(engine)
+    added: List[str] = []
+    with engine.begin() as connection:
+        for table in Base.metadata.sorted_tables:
+            if not inspector.has_table(table.name):
+                continue
+            existing = {column["name"] for column in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in existing:
+                    continue
+                if not column.nullable or column.server_default is not None:
+                    # not safely addable without a migration
+                    continue
+                if column.primary_key or column.foreign_keys:
+                    continue
+                column_type = column.type.compile(dialect=engine.dialect)
+                connection.execute(
+                    sa.text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {column_type}')
+                )
+                added.append(f"{table.name}.{column.name}")
+    if added:
+        logger.info("schema healed (additive columns): %s", ", ".join(added))
+    return added
 
 
 def dispose_engine() -> None:

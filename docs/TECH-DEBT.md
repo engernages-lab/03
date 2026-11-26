@@ -13,7 +13,10 @@
 | TD-03 | 多乐器分离未实现 | 中 | `DEFERRED` | 模型（Basic Pitch）不做声源分离；混音曲目识别质量随乐器数下降 | V1.0-D |
 | TD-04 | 公网后端 API 未部署 | 高 | `BLOCKED` | 线上仅静态前端 <https://engernages-lab.github.io/03/>，页面显示「静态预览页，未连接 API」；缺托管账号/凭据 | 待用户授权 |
 | TD-05 | 多音源平台部分未配置 | 中 | `BLOCKED` | Apple Music / Spotify 返回 `not_configured`（缺 Team ID/.p8、Client ID/Secret）；Navidrome 无真实实例；网易云/QQ 无官方接口 | 待用户提供凭据 |
-| TD-06 | 浏览器下载在沙箱环境被取消 | 低 | `BLOCKED` | Chromium 对 `data:`/`blob:` 下载一律返回 `canceled`；产物字节已由 E2E 校验，OS 保存对话框未验证 | 环境限制 |
+| TD-06 | 浏览器下载在沙箱环境被取消 | 低 | `CONDITIONAL`（V1.1-B） | 已实测 http/blob/data 三种机制全部 `failure=canceled`；产物字节（PNG IHDR / ZIP 局部头 / PDF xref）已由 E2E 校验；新增 `showSaveFilePicker` 优先路径 + 失败提示。**落盘保存仍未验证** | 需真实桌面浏览器复核 |
+| TD-09 | PDF 为位图嵌入，非矢量 | 中 | `OPEN` | 每页以 JPEG(DCTDecode) 嵌入，分辨率上限 = 导出像素尺寸；UI 与报告已标注 | V1.1-C |
+| TD-10 | 极限导出组合未实跑 | 低 | `OPEN` | A4/600 DPI（34.8 MP）单页通过；≥10 页该组合未实跑，仅靠 40 MP 硬保护 | V1.1-C |
+| TD-11 | Firefox / WebKit 未自动化 | 低 | `OPEN` | 本机只安装 Chromium；下载与 PDF 仅在 Chromium 验证 | 环境限制 |
 | TD-07 | 泛音抑制只覆盖 10 个谐波音程 | 低 | `OPEN` | +13/+29 半音这类非谐波伪影无法用音程规则清除（dev `legato` 可见） | V1.1-C |
 | TD-08 | 置信度为检测强度缩放，非概率 | 低 | `OPEN` | `confidence = min(0.95, amplitude × 0.85)`；UI 已注明"不等于实际准确率"，未做概率标定 | V1.1-C |
 

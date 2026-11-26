@@ -78,10 +78,11 @@ test("导出 9:16 高清谱面图片（PNG + ZIP）", async ({ page }) => {
   // ---- full score, all pages -> multi page ZIP ---------------------------
   await page.getByTestId("export-scope").selectOption("all");
   await page.getByTestId("export-mode-full").click();
-  const hint = dialog.getByText(/将导出 \d+ 页/);
+  // V1.1-B: the page count lives in the export summary card
+  const hint = page.getByTestId("export-summary");
   await expect(hint).toBeVisible();
   const text = (await hint.textContent()) ?? "";
-  const pageCount = Number(/将导出\s*(\d+)\s*页/.exec(text)?.[1] ?? "0");
+  const pageCount = Number(/共\s*(\d+)\s*页/.exec(text)?.[1] ?? "0");
   expect(pageCount).toBeGreaterThan(0);
 
   await page.getByTestId("export-confirm").click();
@@ -135,7 +136,7 @@ test("预览、水印开关与信息开关都生效", async ({ page }) => {
 
   await page.getByTestId("export-show-watermark").uncheck();
   await page.getByTestId("export-show-info").uncheck();
-  await expect(dialog.getByText(/将导出 \d+ 页/)).toBeVisible();
+  await expect(page.getByTestId("export-summary")).toContainText(/共 \d+ 页/);
 
   await page.getByTestId("export-mode-keyboard").click();
   await page.getByTestId("export-scope").selectOption("current");

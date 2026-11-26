@@ -8,6 +8,9 @@
  */
 
 import type { DualNotationResponse, GridViewModel, JianpuViewModel } from "./types";
+import { resolvePageSize, type Dpi, type PageFormat, type ResolvedSize } from "./pageFormats";
+
+export type { Dpi, PageFormat, ResolvedSize } from "./pageFormats";
 
 export type ExportMode = "grid" | "jianpu" | "keyboard" | "combined" | "full";
 export type PageSizeId = "hd" | "uhd" | "4k";
@@ -84,6 +87,13 @@ export interface ExportOptions {
   /** "all" exports every page (ZIP when >1); "current" exports page 1 only. */
   scope?: "all" | "current";
   measuresPerPage?: number;
+  /** V1.1-B: paper format (defaults to the legacy 9:16 story format). */
+  format?: PageFormat;
+  /** V1.1-B: print resolution for A4/PDF exports. */
+  dpi?: Dpi;
+  /** V1.1-B: independent toggles for the title/author block. */
+  showTitle?: boolean;
+  showAuthor?: boolean;
 }
 
 export interface ScorePage {
@@ -94,11 +104,38 @@ export interface ScorePage {
 
 const MARGIN_RATIO = 0.055;
 
-/** Measures per page for a mode, derived from the page width. */
-export function measuresPerPage(mode: ExportMode, pageWidth: number, slotsPerMeasure: number): number {
-  const usable = pageWidth * (1 - 2 * MARGIN_RATIO);
-  // one slot should stay comfortably readable at every size
-  const slotWidth = Math.max(16, Math.round(pageWidth / 40));
+/**
+ * Resolve the concrete pixel canvas for the chosen format.
+ *
+ * A4 is computed from millimetres at the requested DPI (never by stretching a
+ * 9:16 canvas); the 9:16 presets are returned unchanged for compatibility.
+ */
+export function resolveExportSize(
+  options: ExportOptions,
+  contentHeight?: number,
+): ResolvedSize {
+  const format: PageFormat = options.format ?? "story";
+  return resolvePageSize({
+    format,
+    dpi: options.dpi ?? 150,
+    storyPreset: options.size,
+    contentHeight,
+  });
+}
+
+/** Format-aware measure budget, derived from the usable page width. */
+export function measuresPerPage(
+  mode: ExportMode,
+  pageWidth: number,
+  slotsPerMeasure: number,
+  // kept for call-site compatibility; vertical density is handled by the row
+  // renderer, since a page always shows every key row
+  _pageHeight?: number,
+): number {
+  const usable = pageWidth * (1 - 2 * MARGIN_RATIO) - pageWidth * 0.1; // minus key labels
+  // target cell width: readable at every page size without wasting a whole page
+  // on a single measure (capped at 18 px, floor of 10 px)
+  const slotWidth = Math.max(10, Math.min(18, Math.round(pageWidth / 70)));
   const perMeasure = slotWidth * Math.max(1, slotsPerMeasure);
   const fit = Math.floor(usable / perMeasure);
   const cap = mode === "combined" || mode === "full" ? 2 : 3;
@@ -160,29 +197,95 @@ const FONT_STACK =
   '"Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif';
 const MUSIC_STACK = '"Noto Music", "Segoe UI Symbol", "DejaVu Sans", serif';
 
+/** Wrap a title into at most `maxLines` lines that fit `maxWidth`. */
+export function wrapTitle(
+  ctx: CanvasRenderingContext2D,
+  title: string,
+  maxWidth: number,
+  maxLines = 2,
+): string[] {
+  const text = (title || "未命名谱面").trim();
+  if (!text) return ["未命名谱面"];
+  const lines: string[] = [];
+  let rest = text;
+  while (rest.length > 0 && lines.length < maxLines) {
+    if (ctx.measureText(rest).width <= maxWidth) {
+      lines.push(rest);
+      rest = "";
+      break;
+    }
+    // binary search the longest prefix that fits
+    let low = 1;
+    let high = rest.length;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if (ctx.measureText(rest.slice(0, mid)).width <= maxWidth) {
+        low = mid;
+      } else {
+        high = mid - 1;
+      }
+    }
+    let cut = Math.max(1, low);
+    // prefer breaking at a space for latin titles
+    const space = rest.lastIndexOf(" ", cut);
+    if (space > cut * 0.6) cut = space;
+    lines.push(rest.slice(0, cut).trimEnd());
+    rest = rest.slice(cut).trimStart();
+  }
+  if (rest.length > 0) {
+    // truncated: mark it instead of silently dropping characters
+    const last = lines[lines.length - 1] ?? "";
+    let trimmed = last;
+    while (trimmed.length > 1 && ctx.measureText(`${trimmed}…`).width > maxWidth) {
+      trimmed = trimmed.slice(0, -1);
+    }
+    lines[lines.length - 1] = `${trimmed}…`;
+  }
+  return lines.length ? lines : ["未命名谱面"];
+}
+
 function drawHeader(render: RenderContext, page: ScorePage): number {
   const { ctx, width, height, theme, options, dual } = render;
   const margin = width * MARGIN_RATIO;
+  const usable = width - margin * 2;
   let y = margin + height * 0.012;
 
   if (!options.showInfo) {
     return margin + height * 0.02;
   }
 
-  ctx.fillStyle = theme.text;
-  ctx.font = `700 ${Math.round(width * 0.052)}px ${FONT_STACK}`;
-  ctx.textBaseline = "top";
-  const title = dual.document.title || "未命名谱面";
-  ctx.fillText(title.length > 22 ? `${title.slice(0, 22)}…` : title, margin, y);
-  y += width * 0.062;
+  const showTitle = options.showTitle !== false;
+  const showAuthor = options.showAuthor !== false;
 
-  ctx.font = `400 ${Math.round(width * 0.026)}px ${FONT_STACK}`;
-  ctx.fillStyle = theme.muted;
-  const artist = dual.document.artist || "未知艺术家";
-  ctx.fillText(artist, margin, y);
-  y += width * 0.036;
+  if (showTitle) {
+    ctx.fillStyle = theme.text;
+    let fontPx = Math.round(width * 0.052);
+    ctx.font = `700 ${fontPx}px ${FONT_STACK}`;
+    let lines = wrapTitle(ctx, dual.document.title || "未命名谱面", usable, 2);
+    // shrink once if a single line still would not fit
+    if (lines.length === 2 && lines[1].endsWith("…")) {
+      fontPx = Math.round(width * 0.042);
+      ctx.font = `700 ${fontPx}px ${FONT_STACK}`;
+      lines = wrapTitle(ctx, dual.document.title || "未命名谱面", usable, 2);
+    }
+    ctx.textBaseline = "top";
+    const lineHeight = fontPx * 1.18;
+    lines.forEach((line, index) => {
+      ctx.fillText(line, margin, y + index * lineHeight);
+    });
+    y += lines.length * lineHeight + width * 0.006;
+  }
 
-  // meta chips
+  if (showAuthor) {
+    ctx.font = `400 ${Math.round(width * 0.026)}px ${FONT_STACK}`;
+    ctx.fillStyle = theme.muted;
+    const artist = dual.document.artist || "未知艺术家";
+    ctx.textBaseline = "top";
+    ctx.fillText(artist, margin, y);
+    y += width * 0.036;
+  }
+
+  // meta chips - wrapped onto extra rows if they would overflow the page
   const chips = [
     `BPM ${Math.round(dual.document.tempo)}`,
     `调号 ${dual.document.key_signature}`,
@@ -191,19 +294,25 @@ function drawHeader(render: RenderContext, page: ScorePage): number {
     `第 ${page.index} / ${page.total} 页`,
   ];
   ctx.font = `500 ${Math.round(width * 0.022)}px ${FONT_STACK}`;
+  const padding = width * 0.012;
+  const chipHeight = width * 0.042;
   let x = margin;
   for (const chip of chips) {
     const textWidth = ctx.measureText(chip).width;
-    const padding = width * 0.012;
-    const chipHeight = width * 0.042;
+    const chipWidth = textWidth + padding * 2;
+    if (x + chipWidth > width - margin) {
+      x = margin;
+      y += chipHeight + height * 0.008;
+    }
     ctx.fillStyle = theme.panel;
-    roundRect(ctx, x, y, textWidth + padding * 2, chipHeight, chipHeight / 2);
+    roundRect(ctx, x, y, chipWidth, chipHeight, chipHeight / 2);
     ctx.fill();
     ctx.fillStyle = theme.muted;
-    ctx.fillText(chip, x + padding, y + chipHeight * 0.28);
-    x += textWidth + padding * 2 + width * 0.012;
+    ctx.textBaseline = "top";
+    ctx.fillText(chip, x + padding, y + chipHeight * 0.26);
+    x += chipWidth + width * 0.012;
   }
-  y += width * 0.042 + height * 0.012;
+  y += chipHeight + height * 0.012;
 
   ctx.strokeStyle = theme.grid;
   ctx.lineWidth = Math.max(1, width * 0.002);
@@ -508,21 +617,104 @@ export function renderScorePage(render: RenderContext, page: ScorePage): void {
 }
 
 export function pageCountFor(dual: DualNotationResponse, options: ExportOptions): number {
-  const size = PAGE_SIZES[options.size];
+  const size = resolveExportSize(options);
   const perPage =
-    options.measuresPerPage ?? measuresPerPage(options.mode, size.width, dual.grid.slots_per_measure);
+    options.measuresPerPage ??
+    measuresPerPage(options.mode, size.width, dual.grid.slots_per_measure, size.height);
   const totalMeasures = Math.max(dual.grid.stats.measures, dual.jianpu.stats.measures, 1);
   const total = paginate(totalMeasures, perPage).length;
   return options.scope === "current" ? 1 : total;
 }
 
+/* ------------------------------------------------------------------ */
+/* V1.1-B file naming: PocketScore_<title>_<notation>_<date>           */
+/* ------------------------------------------------------------------ */
+
+const MODE_LABEL: Record<ExportMode, string> = {
+  grid: "格子谱",
+  jianpu: "数字谱",
+  keyboard: "键盘谱",
+  combined: "双谱",
+  full: "完整谱面",
+};
+
+export function modeLabel(mode: ExportMode): string {
+  return MODE_LABEL[mode] ?? "谱面";
+}
+
+/**
+ * Make one filename segment safe on Windows/macOS/Linux while keeping CJK.
+ * Illegal characters become "_", control chars are dropped, and the result is
+ * truncated without splitting a surrogate pair.
+ */
+export function sanitiseFileNamePart(input: string, maxLength = 40): string {
+  const cleaned = (input || "")
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f]+/g, "")
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[.]+|[. ]+$/g, "");
+  const safe = cleaned || "未命名谱面";
+  if (safe.length <= maxLength) return safe;
+  // avoid cutting a surrogate pair in half
+  let cut = maxLength;
+  const code = safe.charCodeAt(cut - 1);
+  if (code >= 0xd800 && code <= 0xdbff) cut -= 1;
+  return safe.slice(0, cut);
+}
+
+export function dateStamp(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}${month}${day}`;
+}
+
+export interface FileNameInput {
+  title: string;
+  mode: ExportMode;
+  ext: "png" | "zip" | "pdf";
+  date?: Date;
+  page?: number;
+  total?: number;
+  /** Counter appended when the same name is generated twice in one session. */
+  duplicate?: number;
+}
+
+/**
+ * Build an export filename.
+ *
+ * - single PNG: `PocketScore_<title>_<notation>_<yyyymmdd>.png`
+ * - paged PNG:  `..._第<N>页.png`
+ * - ZIP:        `PocketScore_<title>_ScoreImages.zip`
+ * - PDF:        `PocketScore_<title>.pdf`
+ */
+export function exportFileName(input: FileNameInput): string {
+  const title = sanitiseFileNamePart(input.title, 32);
+  const suffix = input.duplicate && input.duplicate > 1 ? `_${input.duplicate}` : "";
+  const total = input.total ?? 1;
+  if (input.ext === "zip") {
+    return `PocketScore_${title}_ScoreImages${suffix}.zip`;
+  }
+  if (input.ext === "pdf") {
+    return `PocketScore_${title}${suffix}.pdf`;
+  }
+  const parts = ["PocketScore", title, modeLabel(input.mode), dateStamp(input.date)];
+  const base = parts.join("_");
+  if (total > 1) {
+    return `${base}_第${input.page ?? 1}页${suffix}.png`;
+  }
+  return `${base}${suffix}.png`;
+}
+
+/** Legacy helper kept for callers/tests that predate the V1.1-B naming. */
 export function fileNameFor(title: string, page: number, total: number): string {
-  const safe = (title || "未命名谱面").replace(/[\\/:*?"<>|]+/g, "_").slice(0, 40);
+  const safe = sanitiseFileNamePart(title, 40);
   if (total <= 1) return `PocketScore_${safe}.png`;
   return `PocketScore_${safe}_第${page}页.png`;
 }
 
 export function zipNameFor(title: string): string {
-  const safe = (title || "未命名谱面").replace(/[\\/:*?"<>|]+/g, "_").slice(0, 40);
-  return `PocketScore_${safe}_ScoreImages.zip`;
+  return exportFileName({ title, mode: "grid", ext: "zip" });
 }
