@@ -118,12 +118,30 @@ def health() -> Dict[str, Any]:
 
 @router.get("/ready")
 def readiness(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    return readiness_payload(db)
+
+
+def readiness_payload(db: Optional[Session] = None) -> Dict[str, Any]:
+    """Readiness for containers: DB, storage, FFmpeg, MIDI and the AI model.
+
+    Never loads the model here - it reports the state the manager already has,
+    so a healthcheck cannot accidentally trigger a 3.7 s JIT warm-up.
+    """
+    from app.services.audio.inference_limiter import get_limiter
+    from app.services.audio.model_manager import model_manager
+
+    settings = get_settings()
     checks: Dict[str, Any] = {}
-    try:
-        db.execute(text("SELECT 1"))
-        checks["database"] = {"ok": True}
-    except Exception as exc:  # pragma: no cover - defensive
-        checks["database"] = {"ok": False, "error": str(exc)}
+
+    if db is not None:
+        try:
+            db.execute(text("SELECT 1"))
+            checks["database"] = {"ok": True}
+        except Exception as exc:  # pragma: no cover - defensive
+            checks["database"] = {"ok": False, "error": str(exc)}
+
+    storage_ok, storage_error = _storage_writable(settings.storage_path)
+    checks["storage"] = {"ok": storage_ok, **({"error": storage_error} if storage_error else {})}
 
     caps = probe_capabilities()
     checks["ffmpeg"] = {"ok": caps["ffmpeg"]["available"], "optional": False}
@@ -133,12 +151,39 @@ def readiness(db: Session = Depends(get_db)) -> Dict[str, Any]:
         "optional": False,
     }
 
+    model_state = model_manager.status()
+    model_ok = model_state["status"] == "ready"
+    checks["model"] = {
+        "ok": model_ok,
+        "status": model_state["status"],
+        "version": model_state["model_version"],
+        "load_seconds": model_state["load_seconds"],
+        "warmup_seconds": model_state["warmup_seconds"],
+        # The model is required for transcription but the API itself is usable
+        # without it (MIDI import, editing, export), so it is not a hard gate
+        # unless preloading was explicitly requested.
+        "optional": not get_settings().model_preload,
+    }
+    checks["inference"] = {"ok": True, **get_limiter().stats()}
+
     required_ok = all(c["ok"] for c in checks.values() if not c.get("optional", False))
     return {
+        "ready": bool(required_ok),
         "status": "ready" if required_ok else "degraded",
         "checks": checks,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _storage_writable(path) -> tuple[bool, Optional[str]]:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe_file = path / ".write-probe"
+        probe_file.write_bytes(b"ok")
+        probe_file.unlink(missing_ok=True)
+        return True, None
+    except Exception as exc:  # pragma: no cover - depends on filesystem
+        return False, f"{type(exc).__name__}: {exc}"
 
 
 @router.get("/capabilities")

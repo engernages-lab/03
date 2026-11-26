@@ -12,10 +12,32 @@ from pathlib import Path
 from typing import List, Optional
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    DotEnvSettingsSource,
+    EnvSettingsSource,
+    SettingsConfigDict,
+)
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 PROJECT_ROOT = BACKEND_DIR.parent
+
+# Fields that accept a comma separated list in the environment.
+CSV_FIELDS = frozenset({"cors_origins", "allowed_audio_extensions", "allowed_midi_extensions"})
+
+
+class _CsvEnvSource(EnvSettingsSource):
+    def prepare_field_value(self, field_name, field, value, value_is_complex):
+        if field_name in CSV_FIELDS and isinstance(value, str):
+            return value
+        return super().prepare_field_value(field_name, field, value, value_is_complex)
+
+
+class _CsvDotEnvSource(DotEnvSettingsSource):
+    def prepare_field_value(self, field_name, field, value, value_is_complex):
+        if field_name in CSV_FIELDS and isinstance(value, str):
+            return value
+        return super().prepare_field_value(field_name, field, value, value_is_complex)
 
 
 class Settings(BaseSettings):
@@ -27,18 +49,42 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
+        # `model_preload` is a legitimate setting; relax the pydantic "model_"
+        # protected namespace so it does not warn on every import.
+        protected_namespaces=("settings_",),
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls,
+        init_settings,
+        env_settings,
+        dotenv_settings,
+        file_secret_settings,
+    ):
+        """Read CSV list fields as plain strings.
+
+        pydantic-settings 2.2 json-decodes complex fields *before* validators,
+        so ``POCKETSCORE_CORS_ORIGINS=a,b`` would crash at import time. The
+        subclasses below hand the raw string to ``_split_csv`` instead.
+        """
+        return (
+            init_settings,
+            _CsvEnvSource(settings_cls),
+            _CsvDotEnvSource(settings_cls),
+            file_secret_settings,
+        )
 
     # -- application -------------------------------------------------------
     app_name: str = "PocketScore AI"
     app_version: str = "1.0.0a1"
     release_stage: str = "V1.0-A"
-    environment: str = "development"  # development | test | production
+    environment: str = "development"  # development | test | staging | production
     debug: bool = True
     api_v1_prefix: str = "/api/v1"
 
-    # -- server ------------------------------------------------------------
-    host: str = "127.0.0.1"
+    # -- server ------------------------------------------------------------    host: str = "127.0.0.1"
     port: int = 8000
     cors_origins: List[str] = Field(
         default_factory=lambda: [
@@ -55,7 +101,7 @@ class Settings(BaseSettings):
     migration_enabled: bool = True
 
     # -- uploads -----------------------------------------------------------
-    max_upload_mb: int = 200
+    max_upload_mb: int = 100
     # Hard ceiling for transcription input; keeps model runtime bounded.
     max_audio_duration_seconds: int = 600
     allowed_audio_extensions: List[str] = Field(
@@ -72,6 +118,17 @@ class Settings(BaseSettings):
     session_secret: str = "change-me-in-production"
     allow_private_network_sources: bool = True  # Navidrome/LAN servers
     ffprobe_timeout_seconds: int = 60
+
+    # -- inference capacity (C.2) -----------------------------------------
+    # One CPU inference at a time is the safe default: a single job peaks at
+    # ~262 MB, so concurrency multiplies memory without adding throughput.
+    max_concurrent_inferences: int = 1
+    # How long a job may wait for a free inference slot before returning 503.
+    inference_queue_timeout_seconds: int = 30
+    # Wall-clock budget for one inference; exceeding it marks the job failed.
+    inference_timeout_seconds: int = 300
+    # Load the model (and run one warm-up inference) during startup.
+    model_preload: bool = False
 
     # -- logging -----------------------------------------------------------
     log_level: str = "INFO"
@@ -115,12 +172,49 @@ class Settings(BaseSettings):
         return self.storage_path / "midi"
 
     @property
+    def is_test(self) -> bool:
+        return self.environment.lower() == "test"
+
+    @property
     def is_production(self) -> bool:
         return self.environment.lower() in {"production", "prod"}
 
     @property
-    def is_test(self) -> bool:
-        return self.environment.lower() == "test"
+    def is_staging(self) -> bool:
+        return self.environment.lower() == "staging"
+
+    @property
+    def requires_hardened_secrets(self) -> bool:
+        """Staging and production must not run on placeholder secrets."""
+        return self.is_staging or self.is_production
+
+    def validate_hardened_secrets(self) -> list[str]:
+        """Return the configuration problems that must block a hardened boot.
+
+        Called from the app factory rather than a field validator so that unit
+        tests may construct ``Settings`` freely; a *running* staging/production
+        service refuses to start with placeholder secrets.
+        """
+        if not self.requires_hardened_secrets:
+            return []
+        problems: list[str] = []
+        if not self.session_secret or self.session_secret == "change-me-in-production":
+            problems.append(
+                "POCKETSCORE_SESSION_SECRET must be set to a random value of at least 32 characters"
+            )
+        elif len(self.session_secret) < 32:
+            problems.append("POCKETSCORE_SESSION_SECRET must be at least 32 characters long")
+        if not self.token_encryption_key:
+            problems.append(
+                "POCKETSCORE_TOKEN_ENCRYPTION_KEY must be set (tokens would be lost on redeploy)"
+            )
+        if "*" in self.cors_origins:
+            problems.append("POCKETSCORE_CORS_ORIGINS must not contain '*' when credentials are allowed")
+        if self.allow_private_network_sources:
+            problems.append(
+                "POCKETSCORE_ALLOW_PRIVATE_NETWORK_SOURCES must be false outside a trusted LAN"
+            )
+        return problems
 
     @property
     def max_upload_bytes(self) -> int:
@@ -158,7 +252,7 @@ class Settings(BaseSettings):
     @field_validator("environment")
     @classmethod
     def _validate_environment(cls, value: str) -> str:
-        allowed = {"development", "test", "production", "prod"}
+        allowed = {"development", "test", "staging", "production", "prod"}
         normalised = value.strip().lower()
         if normalised not in allowed:
             raise ValueError(f"environment must be one of {sorted(allowed)}")
@@ -167,9 +261,19 @@ class Settings(BaseSettings):
     @field_validator("cors_origins", "allowed_audio_extensions", "allowed_midi_extensions", mode="before")
     @classmethod
     def _split_csv(cls, value):
-        """Allow comma separated env values, e.g. ``a,b,c``."""
+        """Accept ``a,b,c`` (preferred) or a JSON list for compatibility."""
         if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
+            text = value.strip()
+            if text.startswith("["):
+                try:
+                    import json
+
+                    parsed = json.loads(text)
+                    if isinstance(parsed, list):
+                        return [str(item).strip() for item in parsed if str(item).strip()]
+                except ValueError:
+                    pass
+            return [item.strip() for item in text.split(",") if item.strip()]
         return value
 
 

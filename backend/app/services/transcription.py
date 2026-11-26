@@ -9,10 +9,12 @@ Fabricating notes would violate the project's acceptance rules.
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.errors import AppError, NotFoundError, ValidationAppError
 from app.core.logging import get_logger
 from app.core.timeutils import utc_iso
@@ -22,6 +24,7 @@ from app.schemas.music_document import new_id
 from app.services import eligibility, library
 from app.services.audio import assets as audio_assets
 from app.services.audio import note_extraction
+from app.services.audio.model_manager import model_manager
 from app.services.music_document import repository
 
 logger = get_logger("pocketscore.transcription")
@@ -147,8 +150,44 @@ def run_job(session: Session, job_id: str) -> TranscriptionJobRecord:
             session.commit()
             return job
 
-        result = note_extraction.transcribe_result(path)
+        from app.services.audio.inference_limiter import InferenceBusy, get_limiter
+
+        limiter = get_limiter()
+        settings = get_settings()
+        started_inference = time.perf_counter()
+        timings: Dict[str, float] = {}
+        try:
+            # Bounded concurrency: a job either gets a slot or the API reports
+            # 503 INFERENCE_BUSY instead of queueing without limit.
+            with limiter.slot(float(settings.inference_queue_timeout_seconds)) as slot_timings:
+                timings = slot_timings
+                result = note_extraction.transcribe_result(path)
+        except InferenceBusy as exc:
+            job.status = "failed"
+            job.progress = 100
+            job.error = (
+                f"INFERENCE_BUSY: 识别服务正忙（并发上限 {exc.limit}，已等待 "
+                f"{exc.waited_seconds:.1f}s），请稍后重试"
+            )
+            job.warnings_json = json.dumps(warnings, ensure_ascii=False)
+            session.commit()
+            return job
+
+        inference_seconds = round(time.perf_counter() - started_inference, 3)
         notes = result.notes
+        if inference_seconds > settings.inference_timeout_seconds:
+            # The thread cannot be pre-empted, so the work already finished; we
+            # only refuse to publish a result that blew the budget.
+            limiter.mark_timeout()
+            job.status = "failed"
+            job.progress = 100
+            job.error = (
+                f"INFERENCE_TIMEOUT: 识别耗时 {inference_seconds:.1f}s 超过上限 "
+                f"{settings.inference_timeout_seconds}s"
+            )
+            job.warnings_json = json.dumps(warnings, ensure_ascii=False)
+            session.commit()
+            return job
 
         job.status = "postprocessing"
         job.progress = 85
@@ -194,6 +233,9 @@ def run_job(session: Session, job_id: str) -> TranscriptionJobRecord:
                 "raw_notes": len(result.raw),
                 "final_notes": len(result.notes),
                 "postprocess_version": "V1.1-A",
+                "inference_seconds": inference_seconds,
+                "queue_wait_seconds": round(timings.get("queue_wait", 0.0), 3),
+                "model_load_seconds": model_manager.state.load_seconds,
             },
             ensure_ascii=False,
         )

@@ -145,6 +145,22 @@ class SSRFBlockedError(AppError):
     message = "The requested address is not allowed"
 
 
+class ServiceBusyError(AppError):
+    """All inference slots are occupied; the caller should retry later."""
+
+    status_code = 503
+    code = "INFERENCE_BUSY"
+    message = "识别服务正忙，请稍后重试"
+
+
+class InferenceTimeoutError(AppError):
+    """An inference job exceeded its wall-clock budget."""
+
+    status_code = 504
+    code = "INFERENCE_TIMEOUT"
+    message = "识别超时，请缩短音频长度后重试"
+
+
 class InternalError(AppError):
     status_code = 500
     code = "INTERNAL_ERROR"
@@ -156,5 +172,6 @@ __all__ = [
     "ConflictError", "UnauthorizedError", "ForbiddenError", "PayloadTooLargeError",
     "UnsupportedMediaError", "RateLimitedError", "ProviderError",
     "ProviderUnavailableError", "ProviderAuthError", "ProviderRestrictedError",
-    "DependencyMissingError", "SSRFBlockedError", "InternalError",
+    "DependencyMissingError", "SSRFBlockedError", "ServiceBusyError",
+    "InferenceTimeoutError", "InternalError",
 ]

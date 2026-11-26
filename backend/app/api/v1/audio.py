@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import shutil
+import tempfile
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile, status
@@ -11,8 +14,9 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.db import get_db
-from app.core.errors import ValidationAppError
+from app.core.errors import PayloadTooLargeError, ValidationAppError
 from app.models.audio import AudioAssetRecord
 from app.schemas.common import Page
 from app.services.audio import assets
@@ -67,15 +71,52 @@ def to_out(record: AudioAssetRecord) -> AudioAssetOut:
 
 @router.post("/upload", response_model=AudioAssetOut, status_code=status.HTTP_201_CREATED)
 async def upload_audio(
+    request: Request,
     file: UploadFile = File(...),
     title: Optional[str] = Query(default=None),
     artist: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
 ) -> AudioAssetOut:
-    data = await file.read()
-    record, _created = assets.ingest_audio(
-        db, data, file.filename or "upload.bin", title=title, artist=artist
-    )
+    """Stream the upload to disk with a running size cap (never a 200 MB buffer)."""
+    settings = get_settings()
+    limit = settings.max_upload_bytes
+
+    # Reject early when the client announces an oversized body.
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > limit * 1.05:
+        raise PayloadTooLargeError(
+            f"file exceeds the {settings.max_upload_mb}MB limit",
+            details={"limit_mb": settings.max_upload_mb, "declared_mb": round(int(declared) / 1048576, 2)},
+        )
+
+    filename = file.filename or "upload.bin"
+    # Validate the extension before touching the body.
+    probe_service.validate_extension(filename)
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="pocketscore-upload-"))
+    tmp_path = tmp_dir / f"upload{Path(filename).suffix.lower()}"
+    written = 0
+    try:
+        with open(tmp_path, "wb") as handle:
+            while True:
+                chunk = await file.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > limit:
+                    raise PayloadTooLargeError(
+                        f"file exceeds the {settings.max_upload_mb}MB limit",
+                        details={"limit_mb": settings.max_upload_mb},
+                    )
+                handle.write(chunk)
+        if written == 0:
+            raise ValidationAppError("uploaded file is empty", code="AUDIO_PROBE_FAILED")
+        record, _created = assets.ingest_audio_from_path(
+            db, tmp_path, filename, title=title, artist=artist
+        )
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
     return to_out(record)
 
 
@@ -85,12 +126,23 @@ async def probe_upload(file: UploadFile = File(...)) -> Dict[str, Any]:
     import tempfile
     from pathlib import Path
 
-    data = await file.read()
+    settings = get_settings()
+    data = bytearray()
+    while True:
+        chunk = await file.read(CHUNK_SIZE)
+        if not chunk:
+            break
+        data.extend(chunk)
+        if len(data) > settings.max_upload_bytes:
+            raise PayloadTooLargeError(
+                f"file exceeds the {settings.max_upload_mb}MB limit",
+                details={"limit_mb": settings.max_upload_mb},
+            )
     filename = file.filename or "upload.bin"
     ext = probe_service.validate_extension(filename)
     with tempfile.TemporaryDirectory(prefix="pocketscore-probe-") as tmp:
         target = Path(tmp) / f"probe{ext}"
-        target.write_bytes(data)
+        target.write_bytes(bytes(data))
         result = probe_service.probe_audio(target)
     return {**result.as_dict(), "filename": filename, "size_bytes": len(data)}
 

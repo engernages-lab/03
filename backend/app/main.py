@@ -125,6 +125,20 @@ def create_app() -> FastAPI:
 
     app.include_router(api_router, prefix=settings.api_v1_prefix)
 
+    # Root-level probes for container platforms (Railway healthcheckPath).
+    # Registered BEFORE the SPA catch-all, otherwise `/{full_path:path}` would
+    # answer /health with index.html.
+    from app.api.v1.health import readiness_payload as _readiness_payload
+
+    @app.get("/health", include_in_schema=False)
+    def health_root() -> dict:
+        return {"status": "ok", "version": __version__, "stage": settings.release_stage}
+
+    @app.get("/ready", include_in_schema=False)
+    def ready_root() -> JSONResponse:
+        payload = _readiness_payload()
+        return JSONResponse(payload, status_code=200 if payload.get("ready") else 503)
+
     # Uploaded audio and extracted artwork are served read-only under /static so
     # the browser can stream them with Range requests.
     from fastapi.staticfiles import StaticFiles
@@ -145,7 +159,7 @@ def create_app() -> FastAPI:
 
         @app.get("/{full_path:path}", include_in_schema=False)
         def spa(full_path: str):  # pragma: no cover - static hosting
-            if full_path.startswith(("api/", "static/", "assets/", "docs", "openapi.json", "redoc")):
+            if full_path.startswith(("api/", "static/", "assets/", "docs", "openapi.json", "redoc", "health", "ready")):
                 raise StarletteHTTPException(status_code=404, detail="Not Found")
             candidate = (dist / full_path).resolve()
             if full_path and dist in candidate.parents and candidate.is_file():
@@ -162,10 +176,34 @@ def create_app() -> FastAPI:
             "api": settings.api_v1_prefix,
         }
 
+    # Root-level probes are registered above (before the SPA catch-all).
+
     @app.on_event("startup")
     def _startup() -> None:
         settings.ensure_directories()
         init_db()
+
+        # Staging/production must not boot on placeholder secrets: refuse to
+        # start rather than silently running with a known key.
+        problems = settings.validate_hardened_secrets()
+        if problems:
+            for problem in problems:
+                logger.error("configuration error: %s", problem)
+            raise RuntimeError("refusing to start with insecure configuration: " + "; ".join(problems))
+
+        if settings.model_preload:
+            from app.services.audio.model_manager import model_manager
+
+            started = time.perf_counter()
+            state = model_manager.load(warmup=True)
+            logger.info(
+                "model preload finished in %.2fs (status=%s, load=%.3fs, warmup=%ss)",
+                time.perf_counter() - started,
+                state.status,
+                state.load_seconds or 0.0,
+                state.warmup_seconds,
+            )
+
         logger.info(
             "%s %s started (env=%s, db=%s)",
             settings.app_name, settings.app_version, settings.environment, settings.database_url,

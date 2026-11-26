@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -33,6 +34,14 @@ logger = get_logger("pocketscore.audio.assets")
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def extract_tags(path: Path) -> Dict[str, Any]:
@@ -134,7 +143,11 @@ def ingest_audio(
     title: Optional[str] = None,
     artist: Optional[str] = None,
 ) -> Tuple[AudioAssetRecord, bool]:
-    """Store an uploaded audio file. Returns ``(asset, created)``."""
+    """Store an uploaded audio file that is already in memory.
+
+    Prefer :func:`ingest_audio_from_path` for HTTP uploads: it keeps the bytes on
+    disk from the first chunk instead of materialising the whole file in RAM.
+    """
     settings = get_settings()
     settings.ensure_directories()
 
@@ -159,6 +172,93 @@ def ingest_audio(
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / f"{checksum}{ext}"
     target.write_bytes(data)
+    return _finalise_asset(
+        session,
+        target,
+        checksum=checksum,
+        ext=ext,
+        size_bytes=len(data),
+        filename=filename,
+        source_id=source_id,
+        title=title,
+        artist=artist,
+    )
+
+
+def ingest_audio_from_path(
+    session: Session,
+    source_path: Path,
+    filename: str,
+    *,
+    source_id: Optional[str] = None,
+    title: Optional[str] = None,
+    artist: Optional[str] = None,
+) -> Tuple[AudioAssetRecord, bool]:
+    """Store an audio file that is already on disk (streamed upload path).
+
+    The bytes never live in Python memory: the caller streams the request into a
+    temporary file with a running size cap, and this function hashes, dedupes and
+    moves that file into the content-addressed store.
+    """
+    settings = get_settings()
+    settings.ensure_directories()
+
+    ext = validate_extension(filename)
+    size_bytes = source_path.stat().st_size
+    if size_bytes == 0:
+        raise ValidationAppError("uploaded file is empty", code="AUDIO_PROBE_FAILED")
+    if size_bytes > settings.max_upload_bytes:
+        raise PayloadTooLargeError(
+            f"file exceeds the {settings.max_upload_mb}MB limit",
+            details={
+                "limit_mb": settings.max_upload_mb,
+                "size_mb": round(size_bytes / 1048576, 2),
+            },
+        )
+
+    checksum = _sha256_file(source_path)
+    existing = session.execute(
+        select(AudioAssetRecord).where(AudioAssetRecord.checksum_sha256 == checksum)
+    ).scalars().first()
+    if existing is not None:
+        logger.info("audio asset deduplicated by checksum (%s)", checksum[:12])
+        return existing, False
+
+    target_dir = settings.audio_path / checksum[:2]
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / f"{checksum}{ext}"
+    try:
+        os.replace(source_path, target)  # same volume: atomic rename
+    except OSError:  # pragma: no cover - cross-device fallback
+        shutil.copyfile(source_path, target)
+        source_path.unlink(missing_ok=True)
+    return _finalise_asset(
+        session,
+        target,
+        checksum=checksum,
+        ext=ext,
+        size_bytes=size_bytes,
+        filename=filename,
+        source_id=source_id,
+        title=title,
+        artist=artist,
+    )
+
+
+def _finalise_asset(
+    session: Session,
+    target: Path,
+    *,
+    checksum: str,
+    ext: str,
+    size_bytes: int,
+    filename: str,
+    source_id: Optional[str],
+    title: Optional[str],
+    artist: Optional[str],
+) -> Tuple[AudioAssetRecord, bool]:
+    """Probe, validate and register an audio file already in the store."""
+    settings = get_settings()
 
     probe = probe_audio(target)
     verify_decodable(target, probe.duration)
@@ -184,7 +284,7 @@ def ingest_audio(
         stored_path=str(target.relative_to(settings.storage_path)),
         mime=MIME_TYPES.get(ext, "application/octet-stream"),
         ext=ext,
-        size_bytes=len(data),
+        size_bytes=size_bytes,
         duration=round(probe.duration, 4),
         sample_rate=probe.sample_rate,
         channels=probe.channels,

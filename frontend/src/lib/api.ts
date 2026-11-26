@@ -10,6 +10,46 @@ const RAW_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? ""
 export const API_BASE = RAW_BASE.replace(/\/$/, "");
 export const API_V1 = `${API_BASE}/api/v1`;
 
+/**
+ * Where the API lives, and whether that is a usable configuration.
+ *
+ * - `absolute`: an explicit backend origin was injected at build time.
+ * - `same-origin`: no base URL, which is correct for a single-service deploy
+ *   (FastAPI serving the built SPA) or for the Vite dev proxy.
+ * - `misconfigured`: a static host such as GitHub Pages without an API origin -
+ *   requests would go to `/<repo>/api/v1/...` and always 404. The UI shows a
+ *   banner instead of pretending the backend is down.
+ */
+export type ApiConfigMode = "absolute" | "same-origin" | "misconfigured";
+
+function detectMode(): ApiConfigMode {
+  if (API_BASE) return "absolute";
+  const host = typeof window !== "undefined" ? window.location.hostname : "";
+  // github.io (and any other purely static host we know of) has no backend.
+  if (/\.github\.io$/i.test(host) || /\.pages\.dev$/i.test(host) || /\.netlify\.app$/i.test(host)) {
+    return "misconfigured";
+  }
+  return "same-origin";
+}
+
+export const API_CONFIG = {
+  get mode(): ApiConfigMode {
+    return detectMode();
+  },
+  get base(): string {
+    return API_BASE;
+  },
+  get isMisconfigured(): boolean {
+    return detectMode() === "misconfigured";
+  },
+  /** Message shown to the user; never a silent mock fallback. */
+  get message(): string | null {
+    return detectMode() === "misconfigured"
+      ? "当前构建未配置后端 API 地址（VITE_API_BASE_URL），本页只展示界面，上传与扒谱请求会失败。"
+      : null;
+  },
+};
+
 export interface ApiErrorPayload {
   code: string;
   message: string;

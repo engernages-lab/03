@@ -8,7 +8,7 @@ const API_TARGET = process.env.VITE_DEV_API_TARGET ?? "http://127.0.0.1:8000";
 // Local dev/self-hosting keeps "/".
 const BASE_PATH = process.env.VITE_BASE_PATH ?? "/";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: BASE_PATH,
   plugins: [react()],
   resolve: {
@@ -16,6 +16,7 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  define: {},
   server: {
     host: "127.0.0.1",
     port: 5173,
@@ -47,7 +48,9 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
-    sourcemap: true,
+    // Source maps are a development aid: publishing them leaks the whole
+    // implementation to anyone who opens devtools on the public site.
+    sourcemap: mode !== "production",
   },
   test: {
     environment: "jsdom",
@@ -55,4 +58,4 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
   },
-});
+}));

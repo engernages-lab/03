@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.db import get_db, get_session_factory
-from app.core.errors import AppError
+from app.core.errors import AppError, InferenceTimeoutError, ServiceBusyError
 from app.services import transcription
 from app.services.audio import assets, note_extraction
 from app.services.audio.probe import SUPPORTED_EXTENSIONS
@@ -187,7 +187,22 @@ def run_job(job_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """Run synchronously - useful for tests and for retrying a failed job."""
     transcription.get_job(db, job_id)
     job = transcription.run_job(db, job_id)
+    _raise_if_capacity_error(job)
     return transcription.job_to_dict(job)
+
+
+def _raise_if_capacity_error(job) -> None:
+    """Turn capacity problems into honest HTTP statuses instead of a 200 shell.
+
+    A job that failed because the inference pool was full or the budget was
+    exceeded is not a server error on the job - it is the service telling the
+    caller to retry later / shorten the input.
+    """
+    error = job.error or ""
+    if error.startswith("INFERENCE_BUSY"):
+        raise ServiceBusyError(details={"job_id": job.id})
+    if error.startswith("INFERENCE_TIMEOUT"):
+        raise InferenceTimeoutError(details={"job_id": job.id})
 
 
 @router.post("/jobs/{job_id}/cancel")

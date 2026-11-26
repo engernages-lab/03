@@ -1,0 +1,144 @@
+name: Docker verify
+
+# V1.1-C.2: the image build could not be executed on the developer machine
+# (no Docker runtime). This workflow is the executable path for that gate:
+# build the real image, boot it with a Railway-style $PORT and a mounted
+# volume, run a real transcription, then verify data survives a restart.
+#
+# Manual dispatch by default so it never competes with the normal CI matrix.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "backend/Dockerfile"
+      - "backend/requirements.txt"
+      - "railway.json"
+      - ".github/workflows/docker-verify.yml"
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend bundle (the image copies dist/)
+        working-directory: frontend
+        run: |
+          npm ci
+          VITE_BASE_PATH=/03/ npm run build
+          test -f dist/index.html
+
+      - name: Build image
+        run: docker build -f backend/Dockerfile -t pocketscore-api:ci .
+
+      - name: Report image size
+        run: docker image ls pocketscore-api:ci --format '{{.Size}}'
+
+      - name: Boot container with Railway-style PORT and a volume
+        run: |
+          docker volume create psdata
+          docker run -d --name ps \
+            -p 8080:8080 \
+            -e PORT=8080 \
+            -e POCKETSCORE_ENVIRONMENT=staging \
+            -e POCKETSCORE_DEBUG=false \
+            -e POCKETSCORE_LOG_JSON=true \
+            -e POCKETSCORE_SESSION_SECRET="ci-session-secret-0123456789abcdefghij" \
+            -e POCKETSCORE_TOKEN_ENCRYPTION_KEY="Y2ktZmVybmV0LWtleS0zMi1ieXRlcy1sb25nISE=" \
+            -e POCKETSCORE_CORS_ORIGINS=https://engernages-lab.github.io \
+            -e POCKETSCORE_ALLOW_PRIVATE_NETWORK_SOURCES=false \
+            -e POCKETSCORE_DATABASE_URL=sqlite:////data/pocketscore.db \
+            -e POCKETSCORE_STORAGE_DIR=/data/storage \
+            -e POCKETSCORE_MODEL_PRELOAD=true \
+            -e POCKETSCORE_MAX_UPLOAD_MB=25 \
+            -v psdata:/data \
+            pocketscore-api:ci
+
+      - name: Wait for /health (model preload can take ~15 s on a cold CPU)
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/health >/dev/null; then echo "healthy after ${i}s"; exit 0; fi
+            sleep 2
+          done
+          docker logs ps
+          exit 1
+
+      - name: Ready (model + storage + inference capacity)
+        run: |
+          curl -fsS http://127.0.0.1:8080/ready | tee /tmp/ready.json
+          python3 - <<'PY'
+          import json
+          data = json.load(open("/tmp/ready.json"))
+          assert data["checks"]["model"]["status"] == "ready", data["checks"]["model"]
+          assert data["checks"]["storage"]["ok"] is True
+          assert data["checks"]["inference"]["capacity"] >= 1
+          print("ready ok")
+          PY
+
+      - name: Real transcription inside the container
+        run: |
+          set -euo pipefail
+          asset=$(curl -fsS -F "file=@tests/fixtures/melody.wav" http://127.0.0.1:8080/api/v1/audio/upload)
+          echo "$asset"
+          asset_id=$(echo "$asset" | python3 -c 'import json,sys; print(json.load(sys.stdin)["asset_id"])')
+          job=$(curl -fsS -X POST -H 'content-type: application/json' \
+            -d "{\"asset_id\":\"$asset_id\"}" http://127.0.0.1:8080/api/v1/transcription/jobs)
+          job_id=$(echo "$job" | python3 -c 'import json,sys; print(json.load(sys.stdin)["job_id"])')
+          result=$(curl -fsS -X POST http://127.0.0.1:8080/api/v1/transcription/jobs/$job_id/run)
+          echo "$result" > /tmp/job.json
+          python3 - <<'PY'
+          import json
+          data = json.load(open("/tmp/job.json"))
+          assert data["status"] == "completed", data
+          assert data["events_produced"] > 0, data
+          print("transcribed", data["events_produced"], "notes")
+          PY
+
+      - name: Reject a bad upload over the wire
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" -F "file=@README.md;filename=evil.exe" \
+            http://127.0.0.1:8080/api/v1/audio/upload)
+          test "$code" = "415" || (echo "expected 415, got $code"; exit 1)
+
+      - name: Restart and verify the volume survived
+        run: |
+          docker stop ps
+          docker rm ps
+          docker run -d --name ps \
+            -p 8080:8080 -e PORT=8080 \
+            -e POCKETSCORE_ENVIRONMENT=staging \
+            -e POCKETSCORE_SESSION_SECRET="ci-session-secret-0123456789abcdefghij" \
+            -e POCKETSCORE_TOKEN_ENCRYPTION_KEY="Y2ktZmVybmV0LWtleS0zMi1ieXRlcy1sb25nISE=" \
+            -e POCKETSCORE_CORS_ORIGINS=https://engernages-lab.github.io \
+            -e POCKETSCORE_ALLOW_PRIVATE_NETWORK_SOURCES=false \
+            -e POCKETSCORE_DATABASE_URL=sqlite:////data/pocketscore.db \
+            -e POCKETSCORE_STORAGE_DIR=/data/storage \
+            -v psdata:/data pocketscore-api:ci
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/health >/dev/null; then break; fi
+            sleep 2
+          done
+          total=$(curl -fsS "http://127.0.0.1:8080/api/v1/audio/assets?limit=5" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["total"])')
+          echo "assets after restart: $total"
+          test "$total" -ge 1
+
+      - name: Graceful shutdown
+        run: |
+          docker stop --time 30 ps
+          docker logs ps 2>&1 | tail -20
+          docker logs ps 2>&1 | grep -qiE "shutting down|finished server process|Application shutdown complete" \
+            || (echo "no graceful shutdown log"; exit 1)
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker logs ps || true

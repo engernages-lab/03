@@ -76,17 +76,25 @@ def model_status() -> Dict[str, Any]:
 
 
 def run_model(path: Path, config: TranscriptionConfig) -> List[DetectedNote]:
-    """Run the model and return its **raw** note events (no post-processing)."""
+    """Run the model and return its **raw** note events (no post-processing).
+
+    The model instance is shared process-wide (see ``model_manager``): passing a
+    ``Model`` to ``predict`` is what stops basic-pitch from rebuilding the ONNX
+    session on every request.
+    """
     inference = load_module()
     if inference is None:
         raise RuntimeError("basic_pitch_unavailable")
 
-    from basic_pitch import ICASSP_2022_MODEL_PATH
+    from app.services.audio.model_manager import model_manager
+
+    model = model_manager.get()
+    model_manager.mark_call()
 
     logger.info("running %s on %s", MODEL_ID, path.name)
     _model_output, _midi_data, note_events = inference.predict(
         str(path),
-        ICASSP_2022_MODEL_PATH,
+        model,
         onset_threshold=config.onset_threshold,
         frame_threshold=config.frame_threshold,
         minimum_note_length=config.minimum_note_length_ms,
