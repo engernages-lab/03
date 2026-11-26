@@ -43,14 +43,15 @@ echo "== container #1 (write) =="
 run_container "$C1"
 bash scripts/docker/wait-ready.sh "$BASE" "$C1" 240
 python3 scripts/docker/verify-transcription.py --base-url "$BASE" \
+  --token "$TEST_ACCESS_TOKEN" \
   --audio tests/fixtures/melody.wav --out "$OUT/transcription-result.json"
 
 DOCUMENT_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["document_id"])' "$OUT/transcription-result.json")
 ASSET_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["asset_id"])' "$OUT/transcription-result.json")
 echo "document=$DOCUMENT_ID asset=$ASSET_ID"
 
-curl -fsS "$BASE/api/v1/documents/$DOCUMENT_ID" -o "$OUT/before-restart-document.json"
-curl -fsS "$BASE/api/v1/audio/assets/$ASSET_ID" -o "$OUT/before-restart-asset.json"
+curl -fsS -H "Authorization: Bearer $TEST_ACCESS_TOKEN" "$BASE/api/v1/documents/$DOCUMENT_ID" -o "$OUT/before-restart-document.json"
+curl -fsS -H "Authorization: Bearer $TEST_ACCESS_TOKEN" "$BASE/api/v1/audio/assets/$ASSET_ID" -o "$OUT/before-restart-asset.json"
 BEFORE=$(python3 -c '
 import json, sys, hashlib
 doc = json.load(open(sys.argv[1]))
@@ -68,9 +69,9 @@ echo "== container #2 (read, same volume) =="
 run_container "$C2"
 bash scripts/docker/wait-ready.sh "$BASE" "$C2" 240
 
-DOC_STATUS=$(curl -s -o "$OUT/after-restart-document.json" -w '%{http_code}' "$BASE/api/v1/documents/$DOCUMENT_ID")
-ASSET_STATUS=$(curl -s -o "$OUT/after-restart-asset.json" -w '%{http_code}' "$BASE/api/v1/audio/assets/$ASSET_ID")
-ASSETS_TOTAL=$(curl -fsS "$BASE/api/v1/audio/assets?limit=5" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("total"))')
+DOC_STATUS=$(curl -s -H "Authorization: Bearer $TEST_ACCESS_TOKEN" -o "$OUT/after-restart-document.json" -w '%{http_code}' "$BASE/api/v1/documents/$DOCUMENT_ID")
+ASSET_STATUS=$(curl -s -H "Authorization: Bearer $TEST_ACCESS_TOKEN" -o "$OUT/after-restart-asset.json" -w '%{http_code}' "$BASE/api/v1/audio/assets/$ASSET_ID")
+ASSETS_TOTAL=$(curl -fsS -H "Authorization: Bearer $TEST_ACCESS_TOKEN" "$BASE/api/v1/audio/assets?limit=5" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("total"))')
 
 AFTER=$(python3 -c '
 import json, sys, hashlib

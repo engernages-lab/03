@@ -225,13 +225,17 @@ jobs:
         run: |
           python3 scripts/docker/verify-transcription.py \
             --base-url http://127.0.0.1:8000 \
+            --token "$TEST_ACCESS_TOKEN" \
             --audio tests/fixtures/melody.wav \
             --out "$OUT_DIR/transcription-result.json"
 
       - name: Reject an unsupported upload
         run: |
           set -euo pipefail
+          # the endpoint is behind the access gate: authenticate first, then the
+          # 415 must come from media validation rather than from the gate
           code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $TEST_ACCESS_TOKEN" \
             -F "file=@README.md;filename=evil.exe" http://127.0.0.1:8000/api/v1/audio/upload)
           echo "unsupported extension -> HTTP $code"
           test "$code" = "415"

@@ -26,10 +26,13 @@ import wave
 from pathlib import Path
 
 
+TOKEN = os.environ.get("POCKETSCORE_ACCESS_GATE_TOKEN") or os.environ.get("TEST_ACCESS_TOKEN") or ""
+
+
 def request(url: str, *, method: str = "GET", data: bytes | None = None, headers: dict | None = None):
-    # The staging container runs behind the access gate; the CI token is passed
-    # in through the environment so it never appears in argv or logs.
-    token = os.environ.get("POCKETSCORE_ACCESS_GATE_TOKEN")
+    # The staging container runs behind the access gate; the token comes from
+    # --token or the environment so it never appears in a log line.
+    token = TOKEN
     merged = dict(headers or {})
     if token:
         merged.setdefault("Authorization", f"Bearer {token}")
@@ -78,7 +81,12 @@ def main() -> int:
     parser.add_argument("--audio", default="tests/fixtures/melody.wav")
     parser.add_argument("--out", default="docker-verification/transcription-result.json")
     parser.add_argument("--timeout", type=int, default=180)
+    parser.add_argument("--token", default="", help="access gate bearer token")
     args = parser.parse_args()
+
+    global TOKEN
+    if args.token:
+        TOKEN = args.token
 
     base = args.base_url.rstrip("/")
     audio = Path(args.audio)
