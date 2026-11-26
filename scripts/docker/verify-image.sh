@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Inspect the built image: dependencies, model backend, ffmpeg, frontend bundle.
-# Fails the job when a critical runtime piece is missing - a docker build exit 0
-# does not prove the image can actually transcribe.
+# A docker build exit 0 does not prove the image can actually transcribe, and a
+# heredoc piped into `docker run` without -i would silently assert nothing, so
+# both are handled explicitly here.
 set -euo pipefail
 
 IMAGE="${1:?usage: verify-image.sh <image>}"
@@ -16,18 +17,22 @@ echo "== layer sizes (top 12) =="
 docker history "$IMAGE" --no-trunc --format '{{.Size}}\t{{.CreatedBy}}' 2>/dev/null \
   | sort -h -r | head -12 | tee -a "$OUT/image-info.txt" || true
 
+# NOTE: -i is mandatory: without it python receives an empty stdin and every
+# assertion below would pass vacuously.
 echo "== python + dependency probe =="
-docker run --rm --entrypoint python "$IMAGE" - <<'PY' | tee "$OUT/build-info.json"
+docker run --rm -i --entrypoint python "$IMAGE" - <<'PY' | tee "$OUT/build-info.json"
+import importlib.metadata as md
+import importlib.util
 import json
 import sys
-import importlib.util
+
 
 def version(name):
     try:
-        import importlib.metadata as md
         return md.version(name)
     except Exception:
         return None
+
 
 report = {
     "python": sys.version.split()[0],
@@ -45,8 +50,13 @@ report = {
 print(json.dumps(report, indent=2))
 PY
 
+if ! grep -q '"python"' "$OUT/build-info.json"; then
+  echo "::error::dependency probe produced no output - stdin was not delivered to the container"
+  exit 1
+fi
+
 echo "== hard assertions =="
-docker run --rm --entrypoint python "$IMAGE" - <<'PY'
+docker run --rm -i --entrypoint python "$IMAGE" - <<'PY'
 import importlib.util
 import pathlib
 import shutil
@@ -65,11 +75,13 @@ if importlib.util.find_spec("tensorflow") is not None:
     failures.append("tensorflow leaked into the image (image bloat, wrong backend)")
 
 import basic_pitch
+
 onnx = pathlib.Path(basic_pitch.__file__).parent / "saved_models" / "icassp_2022" / "nmp.onnx"
 if not onnx.is_file():
     failures.append(f"model file missing: {onnx}")
 
 import imageio_ffmpeg
+
 ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
 if not ffmpeg or not pathlib.Path(ffmpeg).exists():
     failures.append("ffmpeg binary missing")
@@ -93,12 +105,37 @@ if failures:
         print(" -", item)
     raise SystemExit(1)
 
-print("IMAGE VERIFY OK: python", sys.version.split()[0], "| onnx model", onnx.name, "| ffmpeg", pathlib.Path(ffmpeg).name)
+print("IMAGE ASSERTIONS OK: python", sys.version.split()[0], "| model", onnx.name, "| ffmpeg", pathlib.Path(ffmpeg).name)
 PY
 
-echo "== dependency consistency (pip check) =="
-docker run --rm --entrypoint python "$IMAGE" -m pip check | tee "$OUT/dependency-audit.txt" || {
-  echo "pip check reported problems"; exit 1;
-}
+echo "== dependency consistency =="
+# basic-pitch 0.4.0 declares tensorflow for Linux+py3.11. This project runs the
+# ONNX graph on purpose, so that single declared edge is expected to be missing.
+# Every other inconsistency is a real failure.
+set +e
+docker run --rm --entrypoint python "$IMAGE" -m pip check > "$OUT/dependency-audit-raw.txt" 2>&1
+PIP_RC=$?
+set -e
+cat "$OUT/dependency-audit-raw.txt"
+
+if [ "$PIP_RC" -ne 0 ]; then
+  # keep only the intentionally unsatisfied edge
+  other=$(grep -viE 'basic-pitch.*(tensorflow|tensorflow-macos|tflite-runtime|coremltools)' \
+            "$OUT/dependency-audit-raw.txt" | grep -vE '^\s*$' || true)
+  if [ -n "$other" ]; then
+    echo "::error::unexpected dependency inconsistency:"
+    echo "$other"
+    exit 1
+  fi
+  echo "dependency check: only the intentional basic-pitch/tensorflow edge is unsatisfied (ONNX backend by design)"
+else
+  echo "dependency check: pip check clean"
+fi
+
+{
+  echo "pip check rc=${PIP_RC}"
+  echo "--- intentional exception: basic-pitch declares tensorflow on linux/py3.11; this image runs nmp.onnx via onnxruntime ---"
+  cat "$OUT/dependency-audit-raw.txt"
+} > "$OUT/dependency-audit.txt"
 
 echo "verify-image: OK"
