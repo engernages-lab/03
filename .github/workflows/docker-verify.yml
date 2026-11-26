@@ -62,8 +62,8 @@ jobs:
             bash -n "$script"
             echo "syntax ok: $script"
           done
-          python3 -m py_compile scripts/docker/verify-transcription.py
-          echo "syntax ok: verify-transcription.py"
+          python3 -m py_compile scripts/docker/verify-transcription.py scripts/docker/verify-context.py
+          echo "syntax ok: python tools"
 
       # --------------------------------------------------------------- secrets
       - name: Generate throwaway test secrets
@@ -108,6 +108,11 @@ jobs:
           echo "sourcemaps in dist: $map_count"
           test "$map_count" -eq 0
           du -sh frontend/dist
+
+      # A missing COPY source (or one hidden by .dockerignore) otherwise fails
+      # deep inside BuildKit with a log that needs repo admin rights to read.
+      - name: Verify build context (Dockerfile COPY vs .dockerignore)
+        run: python3 scripts/docker/verify-context.py --dockerfile backend/Dockerfile
 
       # ----------------------------------------------------------------- docker
       - uses: docker/setup-buildx-action@v3
