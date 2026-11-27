@@ -147,6 +147,12 @@ class Settings(BaseSettings):
     # When frontend/dist exists it is served from "/" so one container can host
     # both the API and the SPA. Disable to host the frontend separately.
     serve_frontend: bool = True
+    # Where the built SPA lives. In the repository that is <repo>/frontend/dist,
+    # but inside the container the app sits at /app while the bundle is copied to
+    # /app/frontend/dist, so PROJECT_ROOT resolves to "/" and the default lookup
+    # misses. Setting this explicitly (Dockerfile does) or falling back to
+    # BACKEND_DIR keeps the single-service deploy working.
+    frontend_dist_dir: Optional[str] = None
 
     # -- third party credentials (all optional; integrations degrade
     #    gracefully when absent) -------------------------------------------
@@ -252,6 +258,17 @@ class Settings(BaseSettings):
     @property
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
+
+    @property
+    def frontend_dist_path(self) -> Optional[Path]:
+        """Directory holding the built SPA, or None when there is no bundle."""
+        if self.frontend_dist_dir:
+            explicit = self._resolve(self.frontend_dist_dir)
+            return explicit if explicit.is_dir() else None
+        for candidate in (PROJECT_ROOT / "frontend" / "dist", BACKEND_DIR / "frontend" / "dist"):
+            if candidate.is_dir():
+                return candidate
+        return None
 
     def _resolve(self, raw: str) -> Path:
         p = Path(raw).expanduser()

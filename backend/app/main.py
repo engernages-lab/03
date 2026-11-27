@@ -14,7 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import __version__
 from app.api.v1.router import api_router
-from app.core.config import PROJECT_ROOT, get_settings
+from app.core.config import get_settings
 from app.core.db import init_db
 from app.core.errors import AppError, InternalError
 from app.core.logging import configure_logging, get_logger, request_id_var
@@ -157,8 +157,8 @@ def create_app() -> FastAPI:
 
     # Optional: serve the built SPA from the same origin (single-service deploy).
     # Disabled under test so API 404 behaviour stays observable.
-    dist = PROJECT_ROOT / "frontend" / "dist"
-    if settings.serve_frontend and not settings.is_test and dist.is_dir():
+    dist = settings.frontend_dist_path
+    if settings.serve_frontend and not settings.is_test and dist is not None:
         from fastapi.responses import FileResponse
 
         assets = dist / "assets"
@@ -175,15 +175,18 @@ def create_app() -> FastAPI:
                 return FileResponse(candidate)
             return FileResponse(index_file)
 
-    @app.get("/", include_in_schema=False)
-    def root() -> dict:
-        return {
-            "name": settings.app_name,
-            "version": __version__,
-            "stage": settings.release_stage,
-            "docs": "/docs",
-            "api": settings.api_v1_prefix,
-        }
+    else:
+
+        @app.get("/", include_in_schema=False)
+        def root() -> dict:
+            """API descriptor, only when no SPA is mounted at the origin root."""
+            return {
+                "name": settings.app_name,
+                "version": __version__,
+                "stage": settings.release_stage,
+                "docs": "/docs",
+                "api": settings.api_v1_prefix,
+            }
 
     # Root-level probes are registered above (before the SPA catch-all).
 
