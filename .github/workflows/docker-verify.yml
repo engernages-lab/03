@@ -213,6 +213,71 @@ jobs:
       - name: Access gate enforced (anonymous must be blocked)
         run: bash scripts/deploy/verify-access-gate.sh http://127.0.0.1:8000 "$TEST_ACCESS_TOKEN"
 
+      # The SPA and its assets are behind the same gate, so "the file exists in
+      # the image" is not proof that a browser can load it. These probes exercise
+      # the real HTTP path: authenticated 200s, anonymous 401s, correct MIME and a
+      # root-relative base path. Asset names are taken from the served HTML, never
+      # hard-coded, because Vite hashes them per build.
+      - name: SPA and static assets over HTTP
+        run: |
+          set -euo pipefail
+          BASE=http://127.0.0.1:8000
+          AUTH="Authorization: Bearer $TEST_ACCESS_TOKEN"
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+
+          echo "== authenticated homepage =="
+          code=$(curl -s -D "$tmp/home.headers" -o "$tmp/home.html" -w '%{http_code}' -H "$AUTH" "$BASE/")
+          test "$code" = "200" || { echo "::error::GET / returned $code"; cat "$tmp/home.headers"; exit 1; }
+          grep -qi 'content-type: *text/html' "$tmp/home.headers" \
+            || { echo "::error::/ is not text/html"; grep -i '^content-type' "$tmp/home.headers"; exit 1; }
+          test -s "$tmp/home.html" || { echo "::error::/ returned an empty body"; exit 1; }
+          grep -qi '<html' "$tmp/home.html" || { echo "::error::/ is not an HTML document"; exit 1; }
+          if grep -q 'ACCESS_GATE_REQUIRED' "$tmp/home.html"; then
+            echo "::error::/ returned the gate error envelope instead of the app"
+            exit 1
+          fi
+          echo "homepage ok: $(wc -c < "$tmp/home.html") bytes, text/html"
+
+          echo "== anonymous homepage must be refused =="
+          anon=$(curl -s -o "$tmp/anon-home.json" -w '%{http_code}' "$BASE/")
+          test "$anon" = "401" || { echo "::error::anonymous GET / returned $anon"; exit 1; }
+          echo "homepage anonymous: $anon"
+
+          echo "== base path assertions =="
+          grep -q '/assets/' "$tmp/home.html" || { echo "::error::index.html does not reference /assets/"; exit 1; }
+          if grep -q '/03/' "$tmp/home.html"; then
+            echo "::error::index.html still uses the /03/ base path (Pages build leaked into the image)"
+            exit 1
+          fi
+          echo "base path ok: root-relative /assets/, no /03/"
+
+          echo "== assets referenced by the page =="
+          mapfile -t JS_ASSETS < <(grep -oE '/assets/[^"]+\.js' "$tmp/home.html" | sort -u)
+          mapfile -t CSS_ASSETS < <(grep -oE '/assets/[^"]+\.css' "$tmp/home.html" | sort -u)
+          test "${#JS_ASSETS[@]}" -ge 1 || { echo "::error::index.html references no JS asset"; exit 1; }
+          test "${#CSS_ASSETS[@]}" -ge 1 || { echo "::error::index.html references no CSS asset"; exit 1; }
+
+          for asset in "${JS_ASSETS[@]}" "${CSS_ASSETS[@]}"; do
+            case "$asset" in
+              *.js) want='javascript' ;;
+              *.css) want='css' ;;
+              *) echo "::error::unexpected asset $asset"; exit 1 ;;
+            esac
+            acode=$(curl -s -D "$tmp/a.headers" -o "$tmp/a.body" -w '%{http_code}' -H "$AUTH" "$BASE$asset")
+            test "$acode" = "200" || { echo "::error::$asset returned $acode"; exit 1; }
+            test -s "$tmp/a.body" || { echo "::error::$asset returned an empty body"; exit 1; }
+            ctype=$(grep -i '^content-type:' "$tmp/a.headers" | tr -d '\r' | cut -d' ' -f2)
+            echo "$ctype" | grep -qi "$want" || { echo "::error::$asset content-type '$ctype' is not $want"; exit 1; }
+            if head -c 64 "$tmp/a.body" | grep -qi '<!doctype html'; then
+              echo "::error::$asset served an HTML page instead of the asset"
+              exit 1
+            fi
+            anon_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE$asset")
+            test "$anon_code" = "401" || { echo "::error::$asset anonymous returned $anon_code"; exit 1; }
+            echo "asset ok: $asset ($acode, $(wc -c < "$tmp/a.body") bytes, $ctype, anonymous $anon_code)"
+          done
+
       - name: Container runtime info
         run: |
           docker inspect "pocketscore-c21-${RUN_ID}-main" \
@@ -240,6 +305,48 @@ jobs:
             -F "file=@README.md;filename=evil.exe" http://127.0.0.1:8000/api/v1/audio/upload)
           echo "unsupported extension -> HTTP $code"
           test "$code" = "415"
+
+      # The size limit must be enforced over the wire, not just in unit tests.
+      # The limit is read from the running container instead of assuming 50 MB,
+      # the oversized file contains real bytes (10% over the limit so the
+      # Content-Length pre-check fires), and a file inside the limit is uploaded
+      # afterwards to prove the endpoint itself still works.
+      - name: Upload size limit returns 413
+        run: |
+          set -euo pipefail
+          BASE=http://127.0.0.1:8000
+          AUTH="Authorization: Bearer $TEST_ACCESS_TOKEN"
+          NAME="pocketscore-c21-${RUN_ID}-main"
+
+          limit_mb=$(docker exec "$NAME" printenv POCKETSCORE_MAX_UPLOAD_MB || true)
+          limit_mb=${limit_mb:-100}
+          echo "container upload limit: ${limit_mb}MB"
+
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+
+          size_mb=$(( limit_mb + limit_mb / 10 + 1 ))
+          { printf 'RIFF'; head -c $(( size_mb * 1024 * 1024 )) /dev/zero; } > "$tmp/oversize.wav"
+          echo "oversize test file: ${size_mb}MB ($(wc -c < "$tmp/oversize.wav") bytes)"
+
+          # curl may report a send error when the server rejects on Content-Length
+          # and closes the connection; the assertion below is on the HTTP status,
+          # so the exit code is captured instead of being masked.
+          code=$(curl -s -o "$tmp/oversize.json" -w '%{http_code}' --max-time 180 \
+            -H "$AUTH" -F "file=@$tmp/oversize.wav;filename=oversize.wav" \
+            "$BASE/api/v1/audio/upload") || echo "curl exit=$?"
+          echo "oversize upload -> HTTP $code"
+          head -c 300 "$tmp/oversize.json" || true
+          echo
+          test "$code" = "413" || { echo "::error::expected 413, got '$code'"; exit 1; }
+          grep -q 'PAYLOAD_TOO_LARGE' "$tmp/oversize.json" \
+            || { echo "::error::413 without the PAYLOAD_TOO_LARGE envelope"; exit 1; }
+
+          small=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "$AUTH" -F "file=@tests/fixtures/melody.wav;filename=melody.wav" \
+            "$BASE/api/v1/audio/upload")
+          echo "in-limit upload -> HTTP $small (expected 201)"
+          test "$small" = "201" || { echo "::error::in-limit upload returned $small"; exit 1; }
 
       # --------------------------------------------------------- persistence
       - name: Stop the main container before the rebuild test
