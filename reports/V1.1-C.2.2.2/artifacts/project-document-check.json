@@ -1,0 +1,61 @@
+{
+  "marker": "C2-2-2-STAGING-REGRESSION-20261127T105532Z",
+  "source_document_id": "6a0c696a7289",
+  "read": {
+    "http": 200,
+    "title": "C2-2-2-STAGING-REGRESSION-20261127T105505Z",
+    "note_count": 4,
+    "asset_id": null
+  },
+  "rename": {
+    "http": 200,
+    "title": "C2-2-2-STAGING-REGRESSION-20261127T105532Z"
+  },
+  "edit": {
+    "http": 200,
+    "revert_http": 200,
+    "pitches_before": [
+      60,
+      64,
+      67,
+      72
+    ],
+    "pitches_after_transpose_up": [
+      61,
+      65,
+      68,
+      73
+    ],
+    "pitches_after_revert": [
+      60,
+      64,
+      67,
+      72
+    ],
+    "transpose_applied": true,
+    "revert_restored": true,
+    "grid_notes_after_edit": 1,
+    "jianpu_notes_after_edit": 4,
+    "notation_still_same_document": true
+  },
+  "reread": {
+    "http": 200,
+    "title": "C2-2-2-STAGING-REGRESSION-20261127T105532Z",
+    "note_count": 4
+  },
+  "notation": {
+    "http": 200,
+    "grid_notes": 3,
+    "grid_unmapped": 1,
+    "jianpu_notes": 4,
+    "jianpu_unmapped": 1,
+    "grid_document_id": "6a0c696a7289",
+    "jianpu_document_id": "6a0c696a7289",
+    "same_document": true
+  },
+  "list": {
+    "http": 200,
+    "total": 8,
+    "contains_document": true
+  }
+}

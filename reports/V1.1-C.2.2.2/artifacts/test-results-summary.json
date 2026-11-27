@@ -1,0 +1,29 @@
+{
+  "run_at": "2026-11-27",
+  "local": {
+    "backend_pytest": { "passed": 354, "failed": 0 },
+    "ruff": "clean",
+    "frontend_vitest": { "passed": 103, "failed": 0, "files": 12 },
+    "typescript": "exit 0",
+    "vite_build": { "seconds": 11.25, "sourcemaps": 0 },
+    "playwright_local": { "passed": 15, "skipped": 1 }
+  },
+  "cloud": {
+    "http_regression": { "passed": 24, "failed": 0 },
+    "access_gate_script": "PASS (6 assertions)",
+    "wav_transcription": { "notes": 4, "job_seconds": 14.614, "status": "completed" },
+    "mp3_transcription": { "notes": 4, "job_seconds": 2.824, "status": "completed" },
+    "document_checks": "PASS (read/rename/edit/revert/notation/list)",
+    "persistence_restart": "PASS (12/12 fields identical)",
+    "persistence_redeploy": "PASS (12/12 fields identical)",
+    "rate_limit": { "attempts": 22, "unauthorized": 20, "throttled": 2 },
+    "browser": { "passed": 2, "skipped": 1 },
+    "upload_security": { "unsupported": 415, "oversize": 413, "anonymous": 401, "valid": 201 }
+  },
+  "not_tested": [
+    "cloud database fault injection (503 path)",
+    "anonymous browser rendering assertion",
+    "long audio (120 s) and concurrency load",
+    "multi-replica behaviour"
+  ]
+}

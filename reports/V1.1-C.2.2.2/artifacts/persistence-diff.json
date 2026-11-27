@@ -1,0 +1,154 @@
+{
+  "before_captured_at": "2026-11-27T10:57:20Z",
+  "after_captured_at": "2026-11-27T11:00:02Z",
+  "rows": [
+    {
+      "field": "Project ID",
+      "before": "6a0c696a7289",
+      "after": "6a0c696a7289",
+      "identical": true
+    },
+    {
+      "field": "Project Name",
+      "before": "C2-2-2-STAGING-REGRESSION-20261127T105532Z",
+      "after": "C2-2-2-STAGING-REGRESSION-20261127T105532Z",
+      "identical": true
+    },
+    {
+      "field": "Audio Asset ID",
+      "before": "5b520fb5abda",
+      "after": "5b520fb5abda",
+      "identical": true
+    },
+    {
+      "field": "Note Count",
+      "before": 4,
+      "after": 4,
+      "identical": true
+    },
+    {
+      "field": "Pitch Sequence",
+      "before": [
+        60,
+        64,
+        67,
+        72
+      ],
+      "after": [
+        60,
+        64,
+        67,
+        72
+      ],
+      "identical": true
+    },
+    {
+      "field": "Onset Sequence",
+      "before": [
+        0.0,
+        0.75,
+        1.5,
+        2.5
+      ],
+      "after": [
+        0.0,
+        0.75,
+        1.5,
+        2.5
+      ],
+      "identical": true
+    },
+    {
+      "field": "Duration Sequence",
+      "before": [
+        0.75,
+        0.75,
+        0.75,
+        0.75
+      ],
+      "after": [
+        0.75,
+        0.75,
+        0.75,
+        0.75
+      ],
+      "identical": true
+    },
+    {
+      "field": "Velocity Sequence",
+      "before": [
+        97,
+        96,
+        101,
+        97
+      ],
+      "after": [
+        97,
+        96,
+        101,
+        97
+      ],
+      "identical": true
+    },
+    {
+      "field": "Audio SHA256",
+      "before": "622501298bd94f8790da1c93eb66f390c1065b16160065fb7cce286bd778016c",
+      "after": "622501298bd94f8790da1c93eb66f390c1065b16160065fb7cce286bd778016c",
+      "identical": true
+    },
+    {
+      "field": "Audio File Size",
+      "before": 11385,
+      "after": 11385,
+      "identical": true
+    },
+    {
+      "field": "Grid Stats",
+      "before": {
+        "notes": 3,
+        "rests": 0,
+        "chords": 0,
+        "measures": 1,
+        "slots": 16,
+        "unmapped": 1
+      },
+      "after": {
+        "notes": 3,
+        "rests": 0,
+        "chords": 0,
+        "measures": 1,
+        "slots": 16,
+        "unmapped": 1
+      },
+      "identical": true
+    },
+    {
+      "field": "Jianpu Stats",
+      "before": {
+        "notes": 4,
+        "rests": 0,
+        "chords": 0,
+        "measures": 1,
+        "accidentals": 0,
+        "ties": 0,
+        "unmapped": 1,
+        "approximate_durations": 0
+      },
+      "after": {
+        "notes": 4,
+        "rests": 0,
+        "chords": 0,
+        "measures": 1,
+        "accidentals": 0,
+        "ties": 0,
+        "unmapped": 1,
+        "approximate_durations": 0
+      },
+      "identical": true
+    }
+  ],
+  "health_after": true,
+  "ready_after": true,
+  "identical": true,
+  "problems": []
+}

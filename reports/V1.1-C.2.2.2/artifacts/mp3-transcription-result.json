@@ -1,0 +1,103 @@
+{
+  "label": "mp3",
+  "base_url": "https://pocketscore-api-staging.up.railway.app",
+  "checked_at": "2026-11-27T10:51:19Z",
+  "file": {
+    "name": "melody.mp3",
+    "suffix": ".mp3",
+    "size_bytes": 11385,
+    "sha256": "622501298bd94f8790da1c93eb66f390c1065b16160065fb7cce286bd778016c"
+  },
+  "upload": {
+    "http": 201,
+    "seconds": 1.026,
+    "asset_id": "5b520fb5abda",
+    "reported_duration": 1.8,
+    "reported_size": 11385,
+    "reported_checksum": "622501298bd94f8790da1c93eb66f390c1065b16160065fb7cce286bd778016c"
+  },
+  "job": {
+    "job_id": "job_341cfaa8c8b4",
+    "http": 200,
+    "seconds": 2.824,
+    "attempts": 1,
+    "state": "completed",
+    "events_produced": 4,
+    "analysis": {
+      "sample_rate": 22050,
+      "duration": 1.8,
+      "rms": 0.485456,
+      "peak": 0.891251,
+      "onsets": 7,
+      "bpm": null,
+      "beat_count": 0,
+      "method": "librosa.beat",
+      "warnings": [],
+      "pipeline": {
+        "raw": 5,
+        "onsets": 8,
+        "removed_harmonic": 0,
+        "filtered": 0,
+        "split_extra": 0,
+        "merged": 4,
+        "final": 4,
+        "quality": {
+          "notes": 4,
+          "mean_confidence": 0.6534,
+          "low_confidence": 0,
+          "low_confidence_ratio": 0.0,
+          "polyphonic_share": 0.0,
+          "review_hint": "\u5355\u58f0\u90e8\u4e3a\u4e3b\uff0c\u4ecd\u5efa\u8bae\u62bd\u67e5\u4f4e\u7f6e\u4fe1\u5ea6\u97f3\u7b26"
+        }
+      },
+      "raw_notes": 5,
+      "final_notes": 4,
+      "postprocess_version": "V1.1-A",
+      "inference_seconds": 0.994,
+      "queue_wait_seconds": 0.0,
+      "model_load_seconds": 2.116
+    },
+    "pipeline": {
+      "version": "V1.1-A",
+      "raw_notes": 5,
+      "final_notes": 4,
+      "removed_harmonic": 0,
+      "split_extra": 0
+    },
+    "document_id": "6a0c696a7289",
+    "error": null
+  },
+  "document": {
+    "http": 200,
+    "document_id": "6a0c696a7289",
+    "title": "melody",
+    "note_count": 4,
+    "pitch_sequence": [
+      60,
+      64,
+      67,
+      72
+    ],
+    "onset_sequence": [
+      0.0,
+      0.75,
+      1.5,
+      2.5
+    ],
+    "duration_sequence": [
+      0.75,
+      0.75,
+      0.75,
+      0.75
+    ],
+    "unique_pitch_count": 4,
+    "pitch_min": 60,
+    "pitch_max": 72
+  },
+  "notation": {
+    "http": 200,
+    "grid_notes": 3,
+    "jianpu_notes": 4,
+    "same_document": true
+  }
+}

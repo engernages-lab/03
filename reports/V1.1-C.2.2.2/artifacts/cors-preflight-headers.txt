@@ -1,0 +1,17 @@
+HTTP/1.1 200 OK
+access-control-allow-credentials: true
+access-control-allow-headers: authorization
+access-control-allow-methods: DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT
+access-control-allow-origin: https://engernages-lab.github.io
+access-control-max-age: 600
+Content-Type: text/plain; charset=utf-8
+Date: Fri, 27 Nov 2026 10:50:21 GMT
+Server: railway-hikari
+vary: Origin
+x-railway-request-id: eJWKb7BoT6yw5V0PGbGh5g
+x-request-id: 84423ea291174536a95906b4aff5df90
+Content-Length: 2
+x-hikari-trace: lax1.z1hw
+x-railway-edge: lax1
+Connection: keep-alive
+

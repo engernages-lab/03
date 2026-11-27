@@ -1,0 +1,4 @@
+/dashboard status=200 html=yes
+/scores status=200 html=yes
+/transcription status=200 html=yes
+/settings status=200 html=yes

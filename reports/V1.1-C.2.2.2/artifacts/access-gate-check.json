@@ -1,0 +1,14 @@
+{
+  "homepage_anonymous": 401,
+  "homepage_authenticated": 200,
+  "assets_authenticated": 200,
+  "api_anonymous": 401,
+  "api_wrong_token": 401,
+  "api_valid_token": 200,
+  "docs_anonymous": 401,
+  "openapi_anonymous": 401,
+  "cors_allowed": "https://engernages-lab.github.io",
+  "cors_foreign": 400,
+  "passed": 24,
+  "failed": 0
+}

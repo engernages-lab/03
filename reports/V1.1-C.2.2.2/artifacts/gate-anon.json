@@ -1,0 +1,1 @@
+{"error":{"code":"ACCESS_GATE_REQUIRED","message":"需要访问凭据（该环境启用了 staging 访问保护）","details":{"mode":"token","realm":"PocketScore Staging"}}}

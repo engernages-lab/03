@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-11-27T11:0Z",
+  "staging": "https://pocketscore-api-staging.up.railway.app",
+  "final_url": "https://pocketscore-api-staging.up.railway.app/scores",
+  "title": "PocketScore AI · 音乐工作站",
+  "asset_count": 12,
+  "assets_sample": [
+    { "url": "/assets/index-BcW44oh8.css", "status": 200 },
+    { "url": "/assets/index-BGu74WxJ.js", "status": 200 }
+  ],
+  "console_errors": [],
+  "failed_requests": [],
+  "routes_verified": ["/dashboard", "/scores", "/transcription", "/settings"],
+  "reload_verified": true,
+  "anonymous_navigation": "NOT TESTED (Chrome aborts with ERR_INVALID_AUTH_CREDENTIALS; HTTP 401 proven separately)"
+}

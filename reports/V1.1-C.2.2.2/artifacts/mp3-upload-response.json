@@ -1,0 +1,19 @@
+{
+  "label": "mp3",
+  "base_url": "https://pocketscore-api-staging.up.railway.app",
+  "checked_at": "2026-11-27T10:51:19Z",
+  "file": {
+    "name": "melody.mp3",
+    "suffix": ".mp3",
+    "size_bytes": 11385,
+    "sha256": "622501298bd94f8790da1c93eb66f390c1065b16160065fb7cce286bd778016c"
+  },
+  "upload": {
+    "http": 201,
+    "seconds": 1.026,
+    "asset_id": "5b520fb5abda",
+    "reported_duration": 1.8,
+    "reported_size": 11385,
+    "reported_checksum": "622501298bd94f8790da1c93eb66f390c1065b16160065fb7cce286bd778016c"
+  }
+}

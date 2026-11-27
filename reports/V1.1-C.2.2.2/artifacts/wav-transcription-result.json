@@ -1,0 +1,107 @@
+{
+  "label": "wav",
+  "base_url": "https://pocketscore-api-staging.up.railway.app",
+  "checked_at": "2026-11-27T10:50:56Z",
+  "file": {
+    "name": "melody.wav",
+    "suffix": ".wav",
+    "size_bytes": 79424,
+    "sha256": "f4824273ba04a1afbc3946327507097e4af507d0cb675a1c3dcc45fa55ec51f6",
+    "sample_rate": 22050,
+    "channels": 1,
+    "frames": 39690,
+    "duration_seconds": 1.8
+  },
+  "upload": {
+    "http": 201,
+    "seconds": 3.256,
+    "asset_id": "ea92ebce992c",
+    "reported_duration": 1.8,
+    "reported_size": 79424,
+    "reported_checksum": "f4824273ba04a1afbc3946327507097e4af507d0cb675a1c3dcc45fa55ec51f6"
+  },
+  "job": {
+    "job_id": "job_5d4a57584e51",
+    "http": 200,
+    "seconds": 14.614,
+    "attempts": 1,
+    "state": "completed",
+    "events_produced": 4,
+    "analysis": {
+      "sample_rate": 22050,
+      "duration": 1.8,
+      "rms": 0.485622,
+      "peak": 0.891251,
+      "onsets": 7,
+      "bpm": null,
+      "beat_count": 0,
+      "method": "librosa.beat",
+      "warnings": [],
+      "pipeline": {
+        "raw": 6,
+        "onsets": 8,
+        "removed_harmonic": 0,
+        "filtered": 0,
+        "split_extra": 0,
+        "merged": 4,
+        "final": 4,
+        "quality": {
+          "notes": 4,
+          "mean_confidence": 0.6569,
+          "low_confidence": 0,
+          "low_confidence_ratio": 0.0,
+          "polyphonic_share": 0.0,
+          "review_hint": "\u5355\u58f0\u90e8\u4e3a\u4e3b\uff0c\u4ecd\u5efa\u8bae\u62bd\u67e5\u4f4e\u7f6e\u4fe1\u5ea6\u97f3\u7b26"
+        }
+      },
+      "raw_notes": 6,
+      "final_notes": 4,
+      "postprocess_version": "V1.1-A",
+      "inference_seconds": 5.267,
+      "queue_wait_seconds": 0.0,
+      "model_load_seconds": 2.116
+    },
+    "pipeline": {
+      "version": "V1.1-A",
+      "raw_notes": 6,
+      "final_notes": 4,
+      "removed_harmonic": 0,
+      "split_extra": 0
+    },
+    "document_id": "24d7458e501c",
+    "error": null
+  },
+  "document": {
+    "http": 200,
+    "document_id": "24d7458e501c",
+    "title": "melody",
+    "note_count": 4,
+    "pitch_sequence": [
+      60,
+      64,
+      67,
+      72
+    ],
+    "onset_sequence": [
+      0.0,
+      0.75,
+      1.5,
+      2.5
+    ],
+    "duration_sequence": [
+      0.75,
+      0.75,
+      0.75,
+      0.75
+    ],
+    "unique_pitch_count": 4,
+    "pitch_min": 60,
+    "pitch_max": 72
+  },
+  "notation": {
+    "http": 200,
+    "grid_notes": 3,
+    "jianpu_notes": 4,
+    "same_document": true
+  }
+}
