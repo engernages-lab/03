@@ -84,7 +84,29 @@ d0dbc19 fix(docker): do not ignore frontend/dist; verify COPY sources before bui
 | 删除 Railway 资源 | ❌ 未执行（无权限，未尝试） |
 | 修改现有 Volume 数据 | ❌ 未执行（无权限，未尝试） |
 
-## 5. 结论
+## 5. 结论（审计时）
 
 Git 状态健康，可部署产物与 CI 绿色提交等价。
 **Railway 侧没有任何凭据**，因此阶段 5–11 的云端验收在本次执行中无法进行（详见 04 报告 §24）。
+
+---
+
+## 6. 后续（部署执行阶段更新，2026-11-27）
+
+用户随后授权直接部署。审计之后又产生 4 个提交并已推送：
+
+```text
+08e55b7 fix(docker): build the SPA inside the image so cloud builds are self-contained
+f31655a fix(docker): drop the VOLUME instruction so Railway accepts the Dockerfile
+7e08dfa fix(spa): actually serve the bundled frontend in the container
+4ec2b7c fix(health): readiness must report the gate and actually check SQLite
+```
+
+| 项 | 最终值 |
+| --- | --- |
+| HEAD | `4ec2b7c`（云端部署使用同一提交） |
+| 工作区 | 干净 |
+| `origin/pocketscore-v1.1-b` | 与本地一致 |
+| `origin/main` | `9e7cd41`（未动） |
+
+上述 4 个提交修复的是"真实云端部署才暴露"的缺陷，详见 `05-deployment-defects-fixed.md`。
