@@ -35,6 +35,10 @@ def parse_copy_sources(dockerfile: Path) -> list[tuple[int, str]]:
         # JSON form: COPY ["a", "b", "dest"]
         if parts[0].startswith("["):
             continue
+        # COPY --from=<stage> <src> <dest>: the source lives in another stage, not
+        # in the build context, so .dockerignore rules cannot affect it.
+        if "--from=" in line:
+            continue
         sources.append((number, parts[0]))
     return sources
 

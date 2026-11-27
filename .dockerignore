@@ -27,8 +27,9 @@ data
 # --- node --------------------------------------------------------------------
 **/node_modules
 .npm-cache
-# NOTE: frontend/dist is NOT ignored - the image COPYs the built bundle. The CI
-# builds it right before docker build, and a missing dist must fail loudly.
+# frontend/dist is ignored again: the image now builds the bundle in its own
+# node stage, so a stale local dist must never leak into the build context.
+frontend/dist
 frontend/.vite
 test-results
 playwright-report

@@ -103,12 +103,13 @@ jobs:
           VITE_BASE_PATH: /03/
         run: npm run build
 
-      - name: Verify frontend artefacts (required by the image COPY)
+      # The image builds its own SPA in a node stage, so this is an independent
+      # check of the Pages build (base /03/) rather than an input to docker build.
+      - name: Verify frontend artefacts (Pages base path)
         run: |
           set -euo pipefail
           test -f frontend/dist/index.html
           test -d frontend/dist/assets
-          # the Dockerfile copies frontend/dist, so a missing bundle must fail here
           map_count=$(find frontend/dist -name '*.map' | wc -l)
           echo "sourcemaps in dist: $map_count"
           test "$map_count" -eq 0

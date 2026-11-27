@@ -1,6 +1,31 @@
 # PocketScore AI - backend API image (Railway / Docker)
 # Build from the repository root:
 #   docker build -f backend/Dockerfile -t pocketscore-api .
+#
+# The frontend is built INSIDE the image. Previously the Dockerfile copied a
+# pre-built frontend/dist, which only existed on a developer machine or in CI:
+# a plain `railway up` (or any clean clone) has no dist and the build died on
+# COPY. Building it here keeps the image self-contained.
+
+# ---- stage 1: build the SPA -------------------------------------------------
+FROM node:20-slim AS frontend
+
+WORKDIR /web
+
+# Lockfile-only install first so dependency layers cache independently of source.
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+COPY frontend/ ./
+
+# The backend serves the bundle at the origin root (/assets, /index.html), while
+# GitHub Pages serves it under /03/. Default to "/" so the containerised SPA can
+# actually load its own assets; pass /03/ only when building for Pages.
+ARG VITE_BASE_PATH=/
+ENV VITE_BASE_PATH=${VITE_BASE_PATH}
+RUN npm run build && test -f dist/index.html
+
+# ---- stage 2: runtime -------------------------------------------------------
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -35,8 +60,8 @@ COPY backend/app ./app
 COPY backend/alembic ./alembic
 COPY backend/alembic.ini ./alembic.ini
 
-# Optional: bake the built frontend into the image so one service can serve both.
-COPY frontend/dist ./frontend/dist
+# One service serves both the API and the SPA.
+COPY --from=frontend /web/dist ./frontend/dist
 
 # Data lives on a volume so redeploys never touch user projects.
 RUN mkdir -p /data/storage && chmod 0777 /data
