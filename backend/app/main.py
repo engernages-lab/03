@@ -145,7 +145,20 @@ def create_app() -> FastAPI:
 
     @app.get("/ready", include_in_schema=False)
     def ready_root() -> JSONResponse:
-        payload = _readiness_payload()
+        # Pass a real session so the readiness payload also verifies the database.
+        # Without it the container probe reported "ready" while never touching
+        # SQLite, which is exactly the failure a readiness check exists to catch.
+        from app.core.db import session_scope
+
+        try:
+            with session_scope() as session:
+                payload = _readiness_payload(session)
+        except Exception as exc:  # pragma: no cover - defensive
+            payload = {
+                "ready": False,
+                "status": "degraded",
+                "checks": {"database": {"ok": False, "error": f"{type(exc).__name__}: {exc}"}},
+            }
         return JSONResponse(payload, status_code=200 if payload.get("ready") else 503)
 
     # Uploaded audio and extracted artwork are served read-only under /static so

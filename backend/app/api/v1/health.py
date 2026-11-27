@@ -166,6 +166,15 @@ def readiness_payload(db: Optional[Session] = None) -> Dict[str, Any]:
     }
     checks["inference"] = {"ok": True, **get_limiter().stats()}
 
+    # Deployment probes must be able to tell "protected as intended" from
+    # "accidentally open" - without ever exposing the credential itself.
+    try:
+        from app.core.access_gate import build_gate
+
+        checks["access_gate"] = {"ok": True, **build_gate(get_settings()).describe()}
+    except Exception as exc:  # pragma: no cover - defensive
+        checks["access_gate"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
     required_ok = all(c["ok"] for c in checks.values() if not c.get("optional", False))
     return {
         "ready": bool(required_ok),

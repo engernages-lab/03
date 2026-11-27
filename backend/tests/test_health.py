@@ -42,3 +42,18 @@ def test_unknown_route_uses_error_envelope(client):
     assert "error" in body
     assert body["error"]["code"] == "HTTP_404"
     assert body["error"]["request_id"]
+
+def test_ready_reports_the_access_gate_state(client):
+    """A deployment probe must be able to tell 'protected' from 'open'."""
+    body = client.get("/ready").json()
+    gate = body["checks"]["access_gate"]
+    assert "enabled" in gate
+    assert "token_configured" in gate
+    # the credential itself must never appear
+    assert "token" not in {k for k in gate if k != "token_configured"}
+
+
+def test_ready_checks_the_database(client):
+    """The container probe must touch SQLite, not just report storage."""
+    body = client.get("/ready").json()
+    assert body["checks"]["database"]["ok"] is True
