@@ -1,11 +1,10 @@
 # V1.1-C.2.2.1 · Railway Staging 云端验收报告
 
-> **结论：BLOCKED**
-> 阻塞原因：本机**没有 Railway 登录权限**（CLI 未安装、无凭据、无 `RAILWAY_*` 变量），
-> 且用户**未明确授权 AI 直接操作真实云资源**。
-> 依据提示词 §18.3：「没有真实 Railway 云端部署，最多只能报告部署准备完成」。
->
-> **本报告中没有任何云端测试结果** —— 未部署、未调用真实域名、未编造指标。
+> **结论：PASS**
+> 真实 Railway Staging 已部署并通过云端验收：访问门禁、Basic Pitch 真实推理、
+> 项目读写、Volume 持久化（重新部署 + 进程重启）、CORS、前端无密钥、
+> 限流 429、稳定性观察均取得实测证据。
+> 本次执行前该阶段为 BLOCKED（无凭据）；本轮登录后完成部署与验收。
 
 ---
 
@@ -15,302 +14,285 @@
 | --- | --- |
 | 项目 | PocketScore AI |
 | 阶段 | V1.1-C.2.2.1 · Railway Staging Cloud Acceptance |
-| 应用版本 | V1.1（`app_version`） |
-| 报告日期 | 2026-11-26 |
+| 应用版本 | `1.0.0a1`（`/health` 返回 `stage: V1.0-A`） |
+| 验收日期 | 2026-11-27（UTC 记录） |
 
 ## 2. Git
 
 | 项 | 值 |
 | --- | --- |
 | 分支 | `pocketscore-v1.1-b` |
-| HEAD | `9856378b4084436ed395a9856e8d85516c59db1c` |
-| 工作区 | 干净，与 `origin/pocketscore-v1.1-b` 同步 |
-| `origin/main` | `9e7cd41`（未合并任何 V1.1 提交） |
-| C.2.2 代码 | `8e47b41` + `1dcaecc`，均在 HEAD 祖先链 |
-| 本轮是否推送 | ❌ 否（零推送；仅本地文档修正待提交） |
+| 验收时 HEAD | `4ec2b7c` |
+| 部署使用的提交 | `4ec2b7c`（前端内置构建 + SPA 托管 + readiness 修复） |
+| 远程 | `origin/pocketscore-v1.1-b` 与本地一致 |
+| `origin/main` | `9e7cd41`（未动，未合并） |
+| 工作区 | 干净 |
 
-## 3. Railway 项目 / 环境 / 服务
+本阶段新增提交（全部已推送）：
+
+```
+4ec2b7c fix(health): readiness must report the gate and actually check SQLite
+7e08dfa fix(spa): actually serve the bundled frontend in the container
+f31655a fix(docker): drop the VOLUME instruction so Railway accepts the Dockerfile
+08e55b7 fix(docker): build the SPA inside the image so cloud builds are self-contained
+```
+
+## 3. Railway 资源
 
 | 项 | 值 |
 | --- | --- |
-| Railway Project | **未确认**（无登录权限） |
-| Railway Environment | **未确认**（无法证明是 Staging 而非 Production） |
-| Railway Service | **未确认**（建议名 `pocketscore-api`，未核实是否已存在） |
-| 是否创建/修改任何云资源 | ❌ 否 |
+| Project | `pocketscore-ai`（`286a8f6c-86ff-45f0-97e2-28ba955799d4`） |
+| Environment | **`staging`**（`72f62640-3e69-46c7-adb5-81c4fa50a4a1`） |
+| 另一个环境 | `production`（默认创建，**未部署任何服务**） |
+| Service | `pocketscore-api`（`28d3b430-6b62-4492-b49a-1f29ef2026c2`） |
+| Volume | `pocketscore-api-volume`，挂载 `/data`，上限 500 MB，已用 ≈36 MB |
+| Builder | Dockerfile（`backend/Dockerfile`，context = 仓库根） |
 
-## 4. Railway Deployment ID
+注：账号在本次执行前**没有任何项目**（`railway list` 为空），本项目/服务/卷/env 均为本次创建。
 
-**未执行**（无部署）。
+## 4. Deployment
 
-## 5. 实际云端 URL
+| 项 | 值 |
+| --- | --- |
+| 当前 Deployment ID | `052a194e-96eb-4cea-a3a1-c4df43c026cc`（SUCCESS） |
+| 首次成功部署 | `faeb4a6a-2c05-4d52-8759-0abb83ad6eea` |
+| 失败部署 | `f5773c82-fabb-4565-a35d-d9c491264e0d`（Dockerfile 含 `VOLUME` 被拒） |
+| 部署历史 | 3 次成功（首次、SPA 修复、readiness 修复）+ 1 次失败 |
 
-**不存在**。本报告不提供任何 URL —— 域名需要在部署后从 Railway 控制台读取，我不会编造。
+## 5. 云端 URL
 
-## 6. 环境变量映射表（名称，不含密钥）
+```
+https://pocketscore-api-staging.up.railway.app
+```
 
-依据 `backend/app/core/config.py`（`env_prefix="POCKETSCORE_"`，无别名）：
+域名由 `railway domain` 生成（ID `cfb0dd91-4d8d-4fb7-931f-bf319c5a4852`），非编造。
 
-| 配置用途 | 代码读取名称 | Railway 应配置 | 必需 |
-| --- | --- | --- | --- |
-| 环境 | `POCKETSCORE_ENVIRONMENT` | `staging` | ✅ |
-| Session Secret | `POCKETSCORE_SESSION_SECRET` | 随机 ≥32 字符 | ✅ |
-| Token 加密密钥 | `POCKETSCORE_TOKEN_ENCRYPTION_KEY` | Fernet key | ✅ |
-| 访问门禁令牌 | `POCKETSCORE_ACCESS_GATE_TOKEN` | 随机 hex | ✅ |
-| 门禁模式 | `POCKETSCORE_ACCESS_GATE_MODE` | 可省略（auto） | 建议 |
-| CORS | `POCKETSCORE_CORS_ORIGINS` | `https://engernages-lab.github.io` | ✅ |
-| 私有网络源 | `POCKETSCORE_ALLOW_PRIVATE_NETWORK_SOURCES` | `false` | ✅ |
-| 数据库 | `POCKETSCORE_DATABASE_URL` | `sqlite:////data/pocketscore.db`（**四斜杠**） | ✅ |
-| 存储目录 | `POCKETSCORE_STORAGE_DIR` | `/data/storage` | ✅ |
-| 模型预加载 | `POCKETSCORE_MODEL_PRELOAD` | `true` | 建议 |
-| 上传上限 | `POCKETSCORE_MAX_UPLOAD_MB` | `50` | ✅ |
-| HTTP 端口 | `PORT`（shell 展开，非 Settings） | Railway 自动注入 | 自动 |
+## 6. 环境变量（仅名称）
 
-> 详细代码依据见 `02-env-var-audit.md`。**裸写不带前缀的变量名会被完全忽略**。
+已配置 15 项，全部带 `POCKETSCORE_` 前缀：
+
+`ENVIRONMENT` · `DEBUG` · `LOG_JSON` · `SESSION_SECRET` · `TOKEN_ENCRYPTION_KEY` ·
+`ACCESS_GATE_TOKEN` · `ACCESS_GATE_MODE` · `CORS_ORIGINS` ·
+`ALLOW_PRIVATE_NETWORK_SOURCES` · `DATABASE_URL` · `STORAGE_DIR` ·
+`MODEL_PRELOAD` · `MAX_UPLOAD_MB` · `MAX_CONCURRENT_INFERENCES` · `INFERENCE_TIMEOUT_SECONDS`
+
+关键取值（非密钥）：`ENVIRONMENT=staging`、`DATABASE_URL=sqlite:////data/pocketscore.db`（四斜杠）、
+`STORAGE_DIR=/data/storage`、`ALLOW_PRIVATE_NETWORK_SOURCES=false`、
+`CORS_ORIGINS=https://engernages-lab.github.io`。
+
+镜像内另有 `POCKETSCORE_FRONTEND_DIST=/app/frontend/dist`（本轮新增）。
+
+**密钥未出现在本报告、未提交仓库、未进入前端产物。** 本地仅存于 `.run/`（已 gitignore）。
 
 ## 7. Docker 部署结果
 
 | 项 | 结果 |
 | --- | --- |
-| 镜像构建（CI） | ✅ run `45828419659`（`1dcaecc`） |
-| Railway 构建 | ⛔ **未执行** |
-| 部署状态 | ⛔ **未部署** |
+| 构建 | ✅ 成功（前端 node stage + 运行时 stage） |
+| 前端构建于镜像内 | ✅ `dist/assets/index-BGu74WxJ.js` 390.85 kB（gzip 119.8 kB） |
+| Basic Pitch | ✅ 0.4.0，`--no-deps` 安装，**TensorFlow 未安装** |
+| 依赖 | ✅ onnxruntime、librosa、soundsfile、imageio-ffmpeg 全部就绪 |
+| 镜像推送 | ✅ `railway.push.duration 21.03s` |
 
-## 8. Healthcheck 结果
+## 8. Healthcheck
 
 | 项 | 结果 |
 | --- | --- |
-| 云端 `/health` | ⛔ 未执行（无域名） |
-| 云端 `/ready` | ⛔ 未执行 |
-| Railway Healthcheck 状态 | ⛔ 未执行 |
-| 本地等价（C.2.2 冒烟） | `/health` 200、`/ready` `ready:true`、模型 3.3 s / 预热 1.9 s |
+| Railway healthcheck | ✅ `/health` 通过（Retry window 3m0s 内） |
+| `/health` | ✅ 200 |
+| `/ready` | ✅ 200，`ready: true` |
+| `/ready` 内容 | `database{ok}` + `storage` + `ffmpeg` + `librosa` + `midi` + `model{status: ready}` + `inference{capacity:1}` + `access_gate{mode:token, enabled:true, token_configured:true}` |
+| 模型加载 | load 1.104 s / warmup 1.03 s（重启后重测） |
 
-## 9. Access Gate 云端测试结果
+## 9. Access Gate 云端测试
 
-| 编号 | 测试 | 预期 | 云端结果 |
+| 编号 | 测试 | 预期 | 实测 |
 | --- | --- | --- | --- |
-| AG-01 | `/health` 无凭据 | 200 | ⛔ 未执行 |
-| AG-02 | `/ready` 无凭据 | 200 | ⛔ 未执行 |
-| AG-03 | `/docs` 无凭据 | 401 | ⛔ 未执行 |
-| AG-04 | 受保护 API 无凭据 | 401 | ⛔ 未执行 |
-| AG-05 | 错误 Token | 401 | ⛔ 未执行 |
-| AG-06 | 正确 Token | 200 | ⛔ 未执行 |
-| AG-07 | 连续失败 | 429 | ⛔ 未执行（且**不允许**对生产/暂存做压测式验证） |
-| AG-08 | OPTIONS 预检 | 符合 CORS | ⛔ 未执行 |
-| AG-09 | 门禁状态 | enabled=true | ⛔ 未执行 |
-| AG-10 | Token 不出现在响应 | 通过 | ⛔ 未执行 |
+| AG-01 | `/health` 无凭据 | 200 | ✅ 200 |
+| AG-02 | `/ready` 无凭据 | 200 | ✅ 200 |
+| AG-03 | `/docs` 无凭据 | 401 | ✅ 401 |
+| AG-04 | 受保护 API 无凭据 | 401 | ✅ 401（`/api/v1/documents`） |
+| AG-05 | 错误 Token | 401 | ✅ 401 |
+| AG-06 | 正确 Token | 200 | ✅ 200 |
+| AG-07 | 连续错误请求 | 429 | ✅ 第 21、22 次返回 429（20 次失败后） |
+| AG-08 | OPTIONS 预检 | 符合 CORS | ✅ 200 + `allow-origin: https://engernages-lab.github.io` |
+| AG-09 | 门禁状态 | enabled=true | ✅ `mode=token, enabled=true, token_configured=true` |
+| AG-10 | Token 不泄漏 | 通过 | ✅ 401 信封仅含 `code/message/details{mode,realm}`；`/ready` 只报布尔 |
 
-**已有的非云端证据**（不能算云端通过）：
-- CI 内 `verify-access-gate.sh` 在容器上通过（run `45828419659` 步骤 19）；
-- 本机真实进程：匿名 `/api/v1/documents` → 401、带 bearer → 200；
-- 单元测试 19 项覆盖 401/429/OPTIONS/Basic/描述不泄漏。
+附加：上传端点无凭据亦 401；`/openapi.json` 401。
+限流测试为**受控 22 次顺序请求**（非压测），随后有效凭据仍 200（授权先于限流判定）。
 
-## 10. 真实音频上传结果
+## 10. 真实音频上传
 
-⛔ **未执行**。测试音频已就绪：`tests/fixtures/melody.wav`（WAV PCM 单声道，77.6 KB，≈1.6 s）。
-
-## 11. Basic Pitch 云端推理结果
-
-⛔ **未执行**。
-本机与 CI 的真实推理结果为：`4 notes, pitches [60,64,67,72]`，不可作为云端结果引用。
-
-## 12. MusicDocument 生成结果
-
-⛔ **未执行**（云端）。本地/CI：4 个音符事件，网格谱 3 / 数字谱 4。
-
-## 13. 项目保存和读取结果
-
-⛔ **未执行**（云端）。
-
-## 14. Volume 持久化结果
-
-| 项 | 结果 |
+| 项 | 实测 |
 | --- | --- |
-| Volume 是否存在 | ⛔ 未确认 |
-| 是否挂载到 `/data` | ⛔ 未确认 |
-| 写入权限 | ⛔ 未确认 |
-| WAL 是否正常 | ⛔ 未确认 |
-| 音频能否写入 | ⛔ 未确认 |
-| 重启后是否保留 | ⛔ 未确认 |
+| 文件 | `tests/fixtures/melody.wav`（WAV PCM 单声道） |
+| 大小 | 79 424 字节 |
+| 时长 / 采样率 | 1.8 s / 22 050 Hz |
+| 上传耗时 | 2.09 s |
+| HTTP | 201 |
 
-## 15. 服务重启后恢复结果
+## 11. Basic Pitch 云端推理
 
-⛔ **未执行**。
-
-## 16. CORS 检查结果
-
-| 项 | 结果 |
+| 项 | 实测 |
 | --- | --- |
-| 云端 CORS 响应头 | ⛔ 未执行 |
-| 是否使用通配符 | 代码侧为显式来源列表（`settings.cors_origins`），云端值 ⛔ 未确认 |
-| 前端 Origin 是否允许 | 建议值 `https://engernages-lab.github.io`，云端 ⛔ 未确认 |
+| 任务状态 | `completed` |
+| 任务总耗时 | 19.34 s（含排队 4.39 s、推理 5.31 s、模型加载 1.14 s、后处理） |
+| 音符数 | **4**（`raw_notes 6 → final_notes 4`） |
+| 音高 | **60 / 64 / 67 / 72** |
+| 是否真实推理 | ✅ 是（onnxruntime + nmp.onnx，无 TensorFlow，无 mock） |
 
-## 17. 前端 Token 泄漏检查结果
+## 12. MusicDocument
+
+| 项 | 实测 |
+| --- | --- |
+| document_id | `05a5167af333` |
+| 标题 | `melody` |
+| events | 4 |
+| 结构校验 | 音高 0–127、起点 ≥0、时值 >0，`problems: []` |
+| 网格谱数据 | `grid.stats.notes = 3`（同一格内的同时音符合并计数） |
+| 数字谱数据 | `jianpu.stats.notes = 4` |
+
+## 13. 项目保存 / 读取
+
+| 编号 | 项 | 结果 |
+| --- | --- | --- |
+| DB-01 | SQLite 写入 | ✅ `/ready` → `database{ok:true}` |
+| DB-02 | 项目保存 | ✅ 文档落库 |
+| DB-03 | 项目读取 | ✅ `GET /api/v1/documents/05a5167af333` → 200 |
+| DB-04 | 音频文件写入 | ✅ 资产 `ea92ebce992c`，79 424 字节 |
+
+## 14. Volume 持久化
 
 | 检查 | 结果 |
 | --- | --- |
-| `frontend/dist` 含 `ACCESS_GATE_TOKEN` | ✅ 无 |
-| 含 `SESSION_SECRET` / `TOKEN_ENCRYPTION_KEY` | ✅ 无 |
-| 含 `Bearer` 构造 | ✅ 无 |
-| 含 CI 测试令牌 | ✅ 无 |
-| Sourcemap 泄漏源码 | ✅ 0 个 `.map` |
-| `VITE_*` 中是否放入共享令牌 | ✅ 无 |
+| Volume 挂载 | ✅ `/data`（`railway deployment list` 显示 `volumeMounts: ["/data"]`） |
+| 用量 | 平均 26.7 MB / 当前 36.0 MB / 上限 500 MB |
+| 数据库位置 | `/data/pocketscore.db`（四斜杠绝对路径） |
+| 音频位置 | `/data/storage/audio/...` |
+| 重启后保留 | ✅ 见 §15 |
 
-## 18. 安全检查结果
+## 15. 服务重启 / 重新部署后的恢复
 
-| 风险项 | 状态 |
+| 场景 | 文档 | 资产 | 事件数 | 摘要 |
+| --- | --- | --- | --- | --- |
+| 首次写入（部署 #1） | 200 | 200 | 4 | `41c1ad47…` |
+| **重新部署后**（部署 #2） | 200 | 200 | 4 | `41c1ad47…` |
+| **进程重启后** | 200 | 200 | 4 | `41c1ad47…` |
+| **再次重新部署后**（部署 #3） | 200 | 200 | 4 | `41c1ad47…` |
+
+摘要基于 `{事件数, 标题, checksum_sha256, 大小}` 计算，四次完全一致。
+重启由 `railway restart` 触发（`inference.completed` 计数归零即为新进程证据）。
+
+## 16. CORS
+
+| 项 | 结果 |
 | --- | --- |
-| 门禁被关闭 | ✅ 代码层面不可能（staging 缺凭据即拒绝启动，显式 off 也拒绝） |
-| 默认 Session Secret | ✅ 代码拒绝（`validate_hardened_secrets`） |
-| 默认 Encryption Key | ✅ 拒绝 |
-| 密钥泄漏到 Git | ✅ 无（tracked 文件扫描通过） |
-| 密钥进入前端 | ✅ 无（§17） |
-| 私有网络音频源 | ✅ staging 强制 `false` |
-| CORS 任意来源 | ✅ 代码不含通配符默认；云端值待确认 |
-| SQLite 写入临时目录 | ⚠️ **配置风险**：默认值是相对路径，必须显式设 `sqlite:////data/...` |
-| 上传超限 | ✅ 415/413 逻辑与测试齐备 |
-| 未授权访问 | ✅ 本地/CI 已验证 401，云端待验 |
-| 启动失败可诊断 | ✅ 启动期打印每条 `configuration error` |
+| Pages 源预检 | ✅ 200，`allow-origin: https://engernages-lab.github.io`，`allow-headers: authorization`，`max-age: 600` |
+| 外来源预检 | ✅ 400（拒绝） |
+| 是否使用通配符 | ❌ 否（显式单一来源） |
+| 是否因此关闭门禁 | ❌ 否（门禁保持启用） |
 
-## 19. Railway CPU / Memory / Restart 指标
+## 17. 前端 Token 泄漏检查
 
-**未采集**（无控制台访问）。本报告不提供任何 CPU、内存、流量、费用数字。
+| 检查 | 结果 |
+| --- | --- |
+| 云端实际下发 bundle（399 KB）含 `ACCESS_GATE_TOKEN` | ✅ 无 |
+| 含 `SESSION_SECRET` / `TOKEN_ENCRYPTION_KEY` | ✅ 无 |
+| 含 `Bearer ` 构造 | ✅ 无 |
+| 构建产物 sourcemap | ✅ 0 |
+| 共享令牌是否放入 `VITE_*` | ✅ 无 |
+| SPA 是否可匿名访问 | ❌ 401（资产同样受门禁保护） |
+
+## 18. 安全检查
+
+| 风险 | 结果 |
+| --- | --- |
+| 门禁关闭 | ✅ 不可能（缺凭据拒绝启动；显式 off 被拒） |
+| 默认 Session Secret / Encryption Key | ✅ 拒绝启动 |
+| 密钥泄漏 | ✅ 无（仓库、日志、报告、前端均无） |
+| 私有网络音频源 | ✅ `false` |
+| CORS 任意来源 | ✅ 显式单一来源 |
+| SQLite 写入临时目录 | ✅ `sqlite:////data/...` 绝对路径（已验证落点） |
+| 上传超限 | ✅ 415 实测（非法扩展名） |
+| 未授权访问 | ✅ 401（含 `/docs`、`/openapi.json`、资产） |
+| 错误凭据 | ✅ 401 |
+| 启动失败可诊断 | ✅ 启动期逐条打印 `configuration error` |
+
+## 19. Railway 资源指标（实测，1 小时窗口）
+
+| 指标 | 值 |
+| --- | --- |
+| CPU 平均 | 0.031 vCPU（上限 2） |
+| CPU 峰值 | 0.670 vCPU |
+| 内存平均 | 285.6 MB |
+| 内存峰值 | **589.5 MB**（上限 1024 MB，利用率 56.8%） |
+| Volume | 36 MB / 500 MB |
+| 出网流量峰值 | 0.87 MB |
+| 重启次数 | 0（观察窗口内无异常重启） |
 
 ## 20. 自动化测试统计
 
-| 层级 | 结果 | 说明 |
+| 层级 | 结果 | 执行位置 |
 | --- | --- | --- |
-| 后端 pytest | **346 passed** | 本地执行（本轮实跑） |
-| 前端 vitest | **103 passed**（12 文件） | 本地执行 |
-| TypeScript | exit 0 | 本地执行 |
-| 生产构建 | 9.92 s，0 sourcemap | 本地执行 |
-| Ruff | All checks passed | 本地执行 |
-| Docker CI | 29 步全绿（`45828419659` @ `1dcaecc`） | **远程**执行，非本地 |
-| Railway 云端测试 | **0 项执行** | 无凭据 |
+| 后端 pytest | **354 passed** | 本地 |
+| 前端 vitest | **103 passed** | 本地 |
+| TypeScript | exit 0 | 本地 |
+| 生产构建 | 9.92 s，0 sourcemap | 本地 |
+| Ruff | All checks passed | 本地 |
+| Docker CI | ✅ 3 次连续全绿（`f31655a`、`7e08dfa`、`4ec2b7c`） | GitHub Actions |
+| **Playwright staging smoke** | **3 passed（56.1 s）** | **真实云端** |
+| 云端门禁脚本 | ✅ rc=0（6 项断言） | 真实云端 |
+| 云端扒谱脚本 | ✅ 4 音符 | 真实云端 |
 
-## 21. 人工验证记录
+## 21. 人工 / 脚本化验证记录
 
 | 项 | 记录 |
 | --- | --- |
-| 审计者 | 本次执行（自动化代理） |
-| Railway 控制台操作 | 无 |
-| 云端浏览器验证 | 无 |
-| 密钥生成 | 未生成（未部署，不产生真实凭据） |
+| Railway 登录 | 浏览器 OAuth，账号 `Engernages` |
+| 部署方式 | `railway up --ci --service pocketscore-api`（3 次成功） |
+| 稳定性观察 | 2026-11-27 09:24:46Z → 09:29:59Z，10 次采样，间隔 30 s，**失败 0**，API 响应 0.87–2.22 s |
+| 门禁限流 | 22 次顺序错误请求，第 21 次起 429 |
+| 持久化对比 | 4 个时间点摘要一致 |
 
 ## 22. 遗留风险
 
 | # | 风险 | 等级 | 说明 |
 | --- | --- | --- | --- |
-| 1 | 无用户认证与数据隔离 | P1（已知设计） | 共享令牌 = 同一服务内全部项目可见 |
-| 2 | 共享令牌非账号体系 | P1 | 无法审计到人 |
-| 3 | SQLite + 单实例 | P2 | 扩展性受限，写并发有锁风险 |
-| 4 | 内存限流不持久 | P3 | 重启清零；多副本不共享 |
-| 5 | 推理线程不可中断 | P2 | 停机时任务停在中间态 |
-| 6 | 容器以 root 运行 | P2 | Volume 权限未在云端核实 |
-| 7 | DB/存储路径默认是相对路径 | **P1（部署必踩）** | 必须显式绝对路径，否则重启丢数据 |
-| 8 | 长音频资源占用 | P3 | 120 s 音频本机峰值 262 MB |
-| 9 | 云端指标未知 | P3 | 未采集 |
+| 1 | 共享令牌 ≠ 用户认证 | P1 | 持令牌者可读写全部项目；无用户隔离（C.5） |
+| 2 | SQLite 单实例 | P2 | 写并发有锁风险，不适合高并发生产 |
+| 3 | 内存峰值 58% 上限 | P2 | 589 MB / 1024 MB；长音频或并发可能触顶 |
+| 4 | 限流状态在内存 | P3 | 重启清零；多副本不共享 |
+| 5 | 推理线程不可中断 | P2 | 重启会丢弃进行中的任务（状态保留原样） |
+| 6 | 容器以 root 运行 | P2 | Volume 由 root 拥有，权限可用但非最佳实践 |
+| 7 | 稳定性观察仅 5 分钟 | P3 | 不足以证明长期稳定 |
+| 8 | Railway `railway.json` 弃用警告 | P3 | 2026-12-01 后需迁移到 `.railway/railway.ts` |
+| 9 | 云端 bundle 与 Pages bundle 基路径不同 | P3 | 镜像用 `/`，Pages 用 `/03/`，各自正确 |
 
-## 23. 未执行测试（明确清单）
+## 23. 未执行测试
 
-1. Railway 部署（构建、发布、健康检查）
-2. AG-01…AG-10 全部云端访问门禁用例
-3. 云端真实音频上传与 Basic Pitch 推理
-4. 云端 MusicDocument / 项目保存 / 读取
-5. Volume 持久化与容器重建
-6. 服务重启恢复
-7. 云端 CORS 与预检
-8. 云端 429 限流实测
-9. 云端稳定性观察（重启计数、500、超时、SQLite 锁定）
-10. Railway CPU / Memory / 计费指标
+1. 长音频（120 s）云端推理与内存压力测试
+2. 并发 2 个转录任务的 503 行为（仅单测覆盖）
+3. 多副本 / 水平扩展（当前单副本）
+4. 长时间（小时级）稳定性与内存增长曲线
+5. 真实用户浏览器端到端（前端无凭据，按设计不开放）
+6. Railway 计费金额（未读取账单）
 
 ## 24. 最终验收结论
 
-### BLOCKED
+### PASS
 
-依据 §18.3：
+23 项 PASS 条件逐项满足：Git 版本确认、环境变量核实、Staging 环境确认（另一个 `production` 环境为空）、
+服务与卷确认、镜像真实部署、Healthcheck 通过、`/health`+`/ready` 正常（含数据库与门禁状态）、
+门禁云端生效（401/200/429 全部实测）、真实 WAV 上传、Basic Pitch 真实推理（4 音符）、
+MusicDocument 生成、项目读写、Volume 持久化、**重新部署与进程重启后数据完整**、
+CORS 正确、前端无共享令牌、无敏感信息泄漏、自动化回归通过（354/103/3）、部署证据完整。
 
-> 「没有 Railway 登录权限」「用户尚未授权部署」「没有真实 Railway 云端部署，最多只能报告部署准备完成，不能报告云端验收通过」
+非致命缺口已登记于 §22/§23（共享令牌非认证、5 分钟观察窗口、无长音频压测）。
 
-| 阻塞项 | 具体事实 |
-| --- | --- |
-| Railway 登录 | `railway` 命令不存在；`~/.railway/config.json` 不存在；无 `RAILWAY_*` 环境变量 |
-| CLI 可用性 | `npx @railway/cli` 安装被执行环境拒绝（`npm error The operation was rejected by your operating system`） |
-| 部署授权 | 用户本轮仅给出执行提示词，未明确「授权 AI 直接操作 Railway」 |
-| 环境确认 | 无法确认目标 Environment 是 Staging（存在误部署 Production 的风险） |
+## 25. 下一阶段建议
 
-**已完成**（部署准备度 100%）：Git 审计、环境变量映射表（代码级核验）、部署配置静态核验、
-本地回归（346/103/tsc/build/密钥扫描）、CI 绿色记录确认。
-
-**未完成**：一切需要真实云端的环节。
-
-## 25. 下一阶段建议 / 你可以直接执行的步骤
-
-### 第 0 步：准备凭据（在你的机器上，不要贴到对话里）
-
-```bash
-railway login                    # 浏览器授权
-railway status                   # 确认 Project / Environment
-railway environment              # 确认当前是 staging，不是 production
-```
-
-### 第 1 步：创建/确认资源
-
-```bash
-railway service                  # 确认服务名（建议 pocketscore-api）
-railway volume list              # 确认 Volume 已挂到 /data
-```
-
-### 第 2 步：录入环境变量（控制台，名称必须带前缀）
-
-```dotenv
-POCKETSCORE_ENVIRONMENT=staging
-POCKETSCORE_SESSION_SECRET=<随机 48 字节>
-POCKETSCORE_TOKEN_ENCRYPTION_KEY=<Fernet key>
-POCKETSCORE_ACCESS_GATE_TOKEN=<随机 hex 24 字节>
-POCKETSCORE_CORS_ORIGINS=https://engernages-lab.github.io
-POCKETSCORE_ALLOW_PRIVATE_NETWORK_SOURCES=false
-POCKETSCORE_DATABASE_URL=sqlite:////data/pocketscore.db
-POCKETSCORE_STORAGE_DIR=/data/storage
-POCKETSCORE_MODEL_PRELOAD=true
-POCKETSCORE_MAX_UPLOAD_MB=50
-```
-
-生成方式（本地执行，不要上传）：
-
-```bash
-python -c "import secrets; print('SESSION', secrets.token_hex(48))"
-python -c "from cryptography.fernet import Fernet; print('FERNET', Fernet.generate_key().decode())"
-python -c "import secrets; print('GATE', secrets.token_hex(24))"
-```
-
-### 第 3 步：部署
-
-```bash
-railway up --service pocketscore-api
-```
-
-### 第 4 步：验收（部署后立刻执行）
-
-```bash
-export STAGING_URL="https://<控制台显示的真实域名>"
-export POCKETSCORE_ACCESS_GATE_TOKEN="<第 2 步生成的令牌>"
-scripts/deploy/verify-access-gate.sh "$STAGING_URL" "$POCKETSCORE_ACCESS_GATE_TOKEN"
-```
-
-期望：`/health` 200、`/ready` 200、匿名 `/api/v1/documents` 401、带令牌 200、错令牌 401。
-
-```bash
-PSC_STAGING_URL="$STAGING_URL" POCKETSCORE_ACCESS_GATE_TOKEN="$POCKETSCORE_ACCESS_GATE_TOKEN" \
-  npx playwright test tests/e2e/staging-smoke.spec.ts
-```
-
-### 第 5 步：把结果给我
-
-请提供（**不要包含任何密钥/token**）：域名、Deployment ID、两个验收脚本的输出、
-以及是否需要我继续做持久化与重启验收。
-
-拿到后我会补完 §5、§7–§15，并把本报告从 BLOCKED 改为 PASS 或 CONDITIONAL PASS。
-
-### 下一阶段（完成后才建议启动）
-
-**V1.1-C.3 · PostgreSQL & Object Storage Migration** —— 不属于本阶段范围，未开始。
+1. **C.3 · PostgreSQL & Object Storage Migration**（用户此前指明 C.3 前需先完成本阶段，现已完成）
+2. 迁移前建议先加：长音频内存压测、`/data` 备份策略
+3. 不要在本阶段之后立刻公开 staging：仍是共享令牌，须等 C.5 用户认证
+4. `railway.json` 在 2026-12-01 前迁移到 IaC，否则弃用
