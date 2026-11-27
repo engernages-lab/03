@@ -63,10 +63,16 @@ COPY backend/alembic.ini ./alembic.ini
 # One service serves both the API and the SPA.
 COPY --from=frontend /web/dist ./frontend/dist
 
-# Data lives on a volume so redeploys never touch user projects.
+# Data lives on a volume so redeploys never touch user projects. The mount point
+# must exist and be writable before the platform attaches the volume.
+#
+# NOTE: no `VOLUME ["/data"]` instruction here on purpose. Railway validates the
+# Dockerfile and rejects it ("docker VOLUME is not supported, use Railway
+# Volumes"), because the platform attaches volumes itself. Locally and in CI the
+# volume is attached explicitly with `-v <name>:/data`, so nothing depends on the
+# instruction.
 RUN mkdir -p /data/storage && chmod 0777 /data
 
-VOLUME ["/data"]
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
