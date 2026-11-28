@@ -149,8 +149,14 @@ jobs:
       - name: Non-root runtime and isolated volume
         run: bash scripts/docker/test_nonroot_runtime.sh "$IMAGE"
 
-      - name: Non-root historical volume compatibility
-        run: bash scripts/docker/test_nonroot_volume.sh "$IMAGE"
+      - name: Historical volume A - already owned by 10001
+        run: bash scripts/docker/test_nonroot_volume.sh mode-a "$IMAGE"
+
+      - name: Historical volume B - root-owned legacy volume (read/write boundary)
+        run: bash scripts/docker/test_nonroot_volume.sh mode-b "$IMAGE"
+
+      - name: Historical volume C - scope-limited one-off migration
+        run: bash scripts/docker/test_nonroot_volume.sh mode-c "$IMAGE"
 
       # The ops tooling ships inside the image (app/ops), but the tests are not
       # baked in (.dockerignore drops tests/). Mount them read-only and run the
