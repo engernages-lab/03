@@ -169,7 +169,7 @@ jobs:
             -e POCKETSCORE_ACCESS_GATE_MODE=off \
             -e POCKETSCORE_REPO_ROOT=/repo \
             --entrypoint python \
-            "$IMAGE" -m pytest -q \
+            "$IMAGE" -m pytest -q -p no:cacheprovider \
               /tests/test_database_backup.py \
               /tests/test_storage_audit.py \
               /tests/test_project_backup.py \
@@ -241,6 +241,10 @@ jobs:
             -e POCKETSCORE_MAX_UPLOAD_MB=50 \
             -e POCKETSCORE_MAX_CONCURRENT_INFERENCES=1 \
             -e POCKETSCORE_INFERENCE_TIMEOUT_SECONDS=300 \
+            -e POCKETSCORE_RATE_LIMIT_REQUESTS=2000 \
+            -e POCKETSCORE_UPLOAD_RATE_LIMIT_REQUESTS=100 \
+            -e POCKETSCORE_TRANSCRIPTION_RATE_LIMIT_REQUESTS=100 \
+            -e POCKETSCORE_WAVEFORM_RATE_LIMIT_REQUESTS=500 \
             -v "${VOLUME}:/data" \
             "$IMAGE"
           echo "started $name"

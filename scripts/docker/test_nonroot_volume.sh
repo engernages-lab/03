@@ -37,8 +37,8 @@ docker volume create "$VOL_A" >/dev/null
 docker volume create "$VOL_B" >/dev/null
 
 # ---------------------------------------------------------------- A: owned
-log "== A. volume pre-owned by 10001:10001 =="
-docker run --rm -v "$VOL_A:/data" --entrypoint sh "$IMAGE" -c '
+log "== A. volume pre-owned by 10001:10001 (seeded as root, then chowned) =="
+docker run --rm --user 0:0 -v "$VOL_A:/data" --entrypoint sh "$IMAGE" -c '
   mkdir -p /data/storage /data/backups
   printf "legacy-audio" > /data/storage/legacy.wav
   printf "legacy-backup" > /data/backups/legacy.bak
@@ -55,7 +55,7 @@ print("mode A ok: read legacy + wrote new")
 
 # ------------------------------------------------------- B: root-owned
 log "== B. volume owned by root (the realistic pre-existing case) =="
-docker run --rm -v "$VOL_B:/data" --entrypoint sh "$IMAGE" -c '
+docker run --rm --user 0:0 -v "$VOL_B:/data" --entrypoint sh "$IMAGE" -c '
   mkdir -p /data/storage /data/backups
   printf "legacy-audio" > /data/storage/legacy.wav
   chmod 0644 /data/storage/legacy.wav
@@ -79,8 +79,8 @@ log "$out"
 [ "$rc" = "0" ] || log "expected a permission failure on write"
 
 # ------------------------------------------------- C: one-off migration
-log "== C. one-off ownership migration (volume root + app dirs only) =="
-docker run --rm -v "$VOL_B:/data" --entrypoint sh "$IMAGE" -c '
+log "== C. one-off ownership migration (runs as root, scope limited to /data, storage, backups) =="
+docker run --rm --user 0:0 -v "$VOL_B:/data" --entrypoint sh "$IMAGE" -c '
   chown 10001:10001 /data
   chown -R 10001:10001 /data/storage /data/backups
   find /data -maxdepth 1 -type f -exec chown 10001:10001 {} \;
