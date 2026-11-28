@@ -163,7 +163,7 @@ jobs:
       # suites with the image's own interpreter, so the SQLite version and the
       # module layout are exactly what production would use. Everything here is
       # synthetic: no Railway access, no real audio, no secrets.
-      - name: Database and storage ops tests inside the image
+      - name: Ops tests inside the image (backup, joint restore, storage audit)
         run: |
           set -uo pipefail
           docker run --rm \
@@ -171,39 +171,44 @@ jobs:
             -v "$PWD/tests/fixtures:/fixtures:ro" \
             -v "$PWD:/repo:ro" \
             -w /app \
+            -e HOME=/app/tmp \
+            -e NUMBA_CACHE_DIR=/app/tmp/numba \
+            -e MPLCONFIGDIR=/app/tmp/mpl \
             -e POCKETSCORE_ENVIRONMENT=test \
             -e POCKETSCORE_ACCESS_GATE_MODE=off \
+            -e POCKETSCORE_MODEL_PRELOAD=false \
             -e POCKETSCORE_REPO_ROOT=/repo \
             --entrypoint python \
-            "$IMAGE" -m pytest -q -p no:cacheprovider \
+            "$IMAGE" -m pytest -q -p no:cacheprovider --basetemp=/app/tmp/pytest \
               /tests/test_database_backup.py \
               /tests/test_storage_audit.py \
               /tests/test_project_backup.py \
-              /tests/test_project_restore_e2e.py \
+              /tests/test_project_restore_e2e.py
+
+      - name: Security tests inside the image (paths, rate limit, CORS, headers)
+        run: |
+          set -uo pipefail
+          docker run --rm \
+            -v "$PWD/backend/tests:/tests:ro" \
+            -v "$PWD/tests/fixtures:/fixtures:ro" \
+            -v "$PWD:/repo:ro" \
+            -w /app \
+            -e HOME=/app/tmp \
+            -e NUMBA_CACHE_DIR=/app/tmp/numba \
+            -e MPLCONFIGDIR=/app/tmp/mpl \
+            -e POCKETSCORE_ENVIRONMENT=test \
+            -e POCKETSCORE_ACCESS_GATE_MODE=off \
+            -e POCKETSCORE_MODEL_PRELOAD=false \
+            -e POCKETSCORE_REPO_ROOT=/repo \
+            --entrypoint python \
+            "$IMAGE" -m pytest -q -p no:cacheprovider --basetemp=/app/tmp/pytest \
               /tests/test_storage_path_safety.py \
               /tests/test_upload_filename_safety.py \
               /tests/test_storage_api_security.py \
               /tests/test_rate_limit.py \
               /tests/test_cors_security.py \
               /tests/test_security_headers.py \
-              /tests/test_runtime_config.py \
-            > "$OUT_DIR/pytest-in-image.log" 2>&1
-          rc=$?
-          tail -40 "$OUT_DIR/pytest-in-image.log" || true
-          if [ "$rc" -ne 0 ]; then
-            # Annotations are readable without a token, so the failing lines are
-            # surfaced there instead of being buried in a private log.
-            grep -E "^(FAILED|ERROR)" "$OUT_DIR/pytest-in-image.log" | head -15 | \
-              while IFS= read -r line; do
-                echo "::error title=pytest-in-image::${line:0:400}"
-              done
-            grep -E "^E   " "$OUT_DIR/pytest-in-image.log" | head -8 | \
-              while IFS= read -r line; do
-                echo "::error title=pytest-cause::${line:0:400}"
-              done
-            echo "::error title=pytest-exit::exit=${rc}"
-            exit "$rc"
-          fi
+              /tests/test_runtime_config.py
 
       # --------------------------------------------------------------- run: PORT
       - name: Create test volume
