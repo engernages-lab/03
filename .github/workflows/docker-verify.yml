@@ -165,7 +165,7 @@ jobs:
       # synthetic: no Railway access, no real audio, no secrets.
       - name: Database and storage ops tests inside the image
         run: |
-          set -euo pipefail
+          set -uo pipefail
           docker run --rm \
             -v "$PWD/backend/tests:/tests:ro" \
             -v "$PWD/tests/fixtures:/fixtures:ro" \
@@ -186,7 +186,24 @@ jobs:
               /tests/test_rate_limit.py \
               /tests/test_cors_security.py \
               /tests/test_security_headers.py \
-              /tests/test_runtime_config.py
+              /tests/test_runtime_config.py \
+            > "$OUT_DIR/pytest-in-image.log" 2>&1
+          rc=$?
+          tail -40 "$OUT_DIR/pytest-in-image.log" || true
+          if [ "$rc" -ne 0 ]; then
+            # Annotations are readable without a token, so the failing lines are
+            # surfaced there instead of being buried in a private log.
+            grep -E "^(FAILED|ERROR)" "$OUT_DIR/pytest-in-image.log" | head -15 | \
+              while IFS= read -r line; do
+                echo "::error title=pytest-in-image::${line:0:400}"
+              done
+            grep -E "^E   " "$OUT_DIR/pytest-in-image.log" | head -8 | \
+              while IFS= read -r line; do
+                echo "::error title=pytest-cause::${line:0:400}"
+              done
+            echo "::error title=pytest-exit::exit=${rc}"
+            exit "$rc"
+          fi
 
       # --------------------------------------------------------------- run: PORT
       - name: Create test volume
