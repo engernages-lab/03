@@ -12,11 +12,14 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.db import get_db, get_session_factory
 from app.core.errors import AppError, InferenceTimeoutError, ServiceBusyError
+from app.core.logging import get_logger
 from app.services import transcription
 from app.services.audio import assets, note_extraction
 from app.services.audio.probe import SUPPORTED_EXTENSIONS
 from app.services.music_document import repository
 from app.services.music_document.serialization import document_to_dict
+
+logger = get_logger("pocketscore.transcription")
 
 router = APIRouter()
 
@@ -104,7 +107,10 @@ async def upload_and_transcribe(
 
 
 async def _run_async_wrapper(job_id: str) -> None:
-    await run_in_threadpool(_run_sync_job, job_id)
+    try:
+        await run_in_threadpool(_run_sync_job, job_id)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("background transcription failed for job %s", job_id)
 
 
 @router.get("/jobs/{job_id}/result")
@@ -161,7 +167,14 @@ def create_job(
         # The analysis is CPU-bound (decode + librosa + numba JIT). Running it on
         # the event loop would freeze every other request for its whole duration,
         # which is exactly what made the UI look stuck at "preprocessing".
-        await run_in_threadpool(_run_sync_job, job_id)
+        #
+        # Background work runs after the response has started, so an exception here
+        # cannot be turned into an HTTP error: it would surface to the client as a
+        # reset connection with no access-log line. Log it and move on instead.
+        try:
+            await run_in_threadpool(_run_sync_job, job_id)
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("background transcription failed for job %s", job_id)
 
     background.add_task(_run)
     return transcription.job_to_dict(job)

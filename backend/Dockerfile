@@ -92,9 +92,18 @@ RUN mkdir -p /data/storage /data/backups \
     && chmod 0775 /data /data/storage /data/backups
 
 # A writable tmp for the streaming upload path; mounted tmpfs in hardened runs.
-RUN mkdir -p /app/tmp && chown 10001:10001 /app/tmp && chmod 0700 /app/tmp
+# NUMBA_CACHE_DIR and HOME point here too: librosa/numba compile JIT kernels on
+# first use and cache them under $HOME. As uid 10001 with a root-owned /app that
+# write fails inside the inference thread, which surfaces as a reset connection
+# instead of a clean error (run 46151659085).
+RUN mkdir -p /app/tmp/numba /app/tmp/mpl \
+    && chown -R 10001:10001 /app/tmp \
+    && chmod 0700 /app/tmp
 
 ENV TMPDIR=/app/tmp \
+    HOME=/app/tmp \
+    NUMBA_CACHE_DIR=/app/tmp/numba \
+    MPLCONFIGDIR=/app/tmp/mpl \
     POCKETSCORE_BACKUP_DIR=/data/backups
 
 USER 10001:10001
