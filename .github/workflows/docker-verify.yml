@@ -505,23 +505,29 @@ jobs:
           set -uo pipefail
           python3 -m venv "$RUNNER_TEMP/audit-venv"
           "$RUNNER_TEMP/audit-venv/bin/pip" install --quiet --upgrade pip pip-audit
+          AUDIT="$RUNNER_TEMP/audit-venv/bin/pip-audit"
+          mode=resolved
           status=0
-          "$RUNNER_TEMP/audit-venv/bin/pip-audit" \
-              --requirement backend/requirements.txt \
+          "$AUDIT" --requirement backend/requirements.txt \
               --format json --output "$OUT_DIR/python-audit.json" || status=$?
-          announce_status=$status
-          "$RUNNER_TEMP/audit-venv/bin/pip-audit" \
-              --requirement backend/requirements.txt \
-              --format columns > "$OUT_DIR/python-audit-report.txt" 2>&1 || status=$?
-          if [ "$announce_status" -eq 0 ]; then
-            echo "result=clean" > "$OUT_DIR/python-audit-status.txt"
-          elif [ "$announce_status" -eq 1 ]; then
-            echo "result=findings" > "$OUT_DIR/python-audit-status.txt"
+          if [ ! -s "$OUT_DIR/python-audit.json" ]; then
+            # The resolver can fail on a range-pinned file; audit the declared
+            # packages directly instead of publishing nothing.
+            mode=no-deps
+            status=0
+            "$AUDIT" --requirement backend/requirements.txt --no-deps \
+                --format json --output "$OUT_DIR/python-audit.json" || status=$?
+          fi
+          "$AUDIT" --requirement backend/requirements.txt --no-deps \
+              --format columns > "$OUT_DIR/python-audit-report.txt" 2>&1 || true
+          if [ -s "$OUT_DIR/python-audit.json" ]; then
+            echo "mode=${mode} findings=$([ "$status" -eq 1 ] && echo yes || echo no)" \
+              > "$OUT_DIR/python-audit-status.txt"
           else
-            echo "result=unavailable exit=$announce_status" > "$OUT_DIR/python-audit-status.txt"
+            echo "mode=${mode} unavailable exit=${status}" > "$OUT_DIR/python-audit-status.txt"
           fi
           cat "$OUT_DIR/python-audit-status.txt"
-          cat "$OUT_DIR/python-audit-report.txt" || true
+          head -30 "$OUT_DIR/python-audit-report.txt" || true
 
       - name: Node dependency audit (npm audit)
         run: |
