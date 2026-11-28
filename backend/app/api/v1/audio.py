@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.errors import PayloadTooLargeError, ValidationAppError
+from app.core.paths import sanitize_upload_filename
 from app.models.audio import AudioAssetRecord
 from app.schemas.common import Page
 from app.services.audio import assets
@@ -89,7 +90,7 @@ async def upload_audio(
             details={"limit_mb": settings.max_upload_mb, "declared_mb": round(int(declared) / 1048576, 2)},
         )
 
-    filename = file.filename or "upload.bin"
+    filename = sanitize_upload_filename(file.filename, fallback="upload.bin")
     # Validate the extension before touching the body.
     probe_service.validate_extension(filename)
 
@@ -138,7 +139,7 @@ async def probe_upload(file: UploadFile = File(...)) -> Dict[str, Any]:
                 f"file exceeds the {settings.max_upload_mb}MB limit",
                 details={"limit_mb": settings.max_upload_mb},
             )
-    filename = file.filename or "upload.bin"
+    filename = sanitize_upload_filename(file.filename, fallback="upload.bin")
     ext = probe_service.validate_extension(filename)
     with tempfile.TemporaryDirectory(prefix="pocketscore-probe-") as tmp:
         target = Path(tmp) / f"probe{ext}"

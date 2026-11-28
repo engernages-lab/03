@@ -21,6 +21,7 @@ from typing import Any, Dict, Optional
 from app.core.config import get_settings
 from app.core.errors import DependencyMissingError, UnsupportedMediaError, ValidationAppError
 from app.core.logging import get_logger
+from app.core.paths import scrub_paths
 
 logger = get_logger("pocketscore.audio")
 
@@ -221,7 +222,7 @@ def verify_decodable(path: Path, expected_duration: float = 0.0) -> None:
                 decoded = handle.getnframes() / float(handle.getframerate() or 1)
         except (wave.Error, OSError) as exc:  # pragma: no cover - defensive
             raise ValidationAppError(
-                f"decoded audio is unreadable: {exc}", code="AUDIO_PROBE_FAILED"
+                f"decoded audio is unreadable ({type(exc).__name__})", code="AUDIO_PROBE_FAILED"
             ) from exc
 
     minimum = max(0.05, window * 0.3)
@@ -301,7 +302,8 @@ def decode_mono(path: Path, sample_rate: int = TARGET_SAMPLE_RATE):
         return audio.astype("float32"), int(sr)
     except Exception as exc:
         raise ValidationAppError(
-            "could not decode the audio file", code="AUDIO_DECODE_FAILED", details={"reason": str(exc)}
+            "could not decode the audio file", code="AUDIO_DECODE_FAILED",
+        details={"reason": scrub_paths(str(exc)), "reason_type": type(exc).__name__},
         ) from exc
 
 

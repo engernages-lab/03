@@ -10,6 +10,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import urlparse
 
 from pydantic import Field, field_validator
 from pydantic_settings import (
@@ -23,7 +24,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 PROJECT_ROOT = BACKEND_DIR.parent
 
 # Fields that accept a comma separated list in the environment.
-CSV_FIELDS = frozenset({"cors_origins", "allowed_audio_extensions", "allowed_midi_extensions"})
+CSV_FIELDS = frozenset({"cors_origins", "allowed_audio_extensions", "allowed_midi_extensions", "trusted_proxy_cidrs"})
 
 
 class _CsvEnvSource(EnvSettingsSource):
@@ -94,6 +95,60 @@ class Settings(BaseSettings):
             "http://127.0.0.1:4173",
         ]
     )
+    # Explicit CORS allowlists: no wildcards while credentials are enabled.
+    cors_allow_methods: List[str] = Field(
+        default_factory=lambda: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+    )
+    cors_allow_headers: List[str] = Field(
+        default_factory=lambda: [
+            "Authorization",
+            "Content-Type",
+            "Accept",
+            "Range",
+            "If-Range",
+            "X-Requested-With",
+            "X-Request-ID",
+        ]
+    )
+
+    # -- rate limiting (C.2.3.4.3) -----------------------------------------
+    # Independent from the access gate: this one limits ordinary API traffic.
+    # None = follow the environment: on for staging/production, off for test so
+    # the suite is not throttled by its own request volume. A rate-limit test
+    # turns it on explicitly.
+    rate_limit_enabled: Optional[bool] = None
+    rate_limit_requests: int = 120
+    rate_limit_window_seconds: float = 60.0
+    upload_rate_limit_requests: int = 10
+    upload_rate_limit_window_seconds: float = 60.0
+    transcription_rate_limit_requests: int = 5
+    transcription_rate_limit_window_seconds: float = 60.0
+    waveform_rate_limit_requests: int = 60
+    waveform_rate_limit_window_seconds: float = 60.0
+    rate_limit_max_keys: int = 10000
+    # Peers inside these ranges may supply X-Forwarded-For. Anything else is
+    # ignored, otherwise a client could rotate a forged IP per request.
+    trusted_proxy_cidrs: List[str] = Field(
+        default_factory=lambda: [
+            "127.0.0.1/32", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+        ]
+    )
+
+    @property
+    def rate_limiting_enabled(self) -> bool:
+        if self.rate_limit_enabled is not None:
+            return bool(self.rate_limit_enabled)
+        return self.environment not in {"test"}
+
+    # -- security headers --------------------------------------------------
+    content_security_policy: str = (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; "
+        "connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; "
+        "frame-ancestors 'none'"
+    )
+    enable_hsts: bool = False
+    hsts_max_age_seconds: int = 31536000
 
     # -- persistence -------------------------------------------------------
     database_url: str = "sqlite:///./data/pocketscore.db"
@@ -223,6 +278,21 @@ class Settings(BaseSettings):
             problems.append(
                 "POCKETSCORE_TOKEN_ENCRYPTION_KEY must be set (tokens would be lost on redeploy)"
             )
+        for origin in self.cors_origins:
+            if origin != "*":
+                parsed = urlparse(origin)
+                if (
+                    parsed.scheme not in {"http", "https"}
+                    or not parsed.netloc
+                    or parsed.username
+                    or parsed.password
+                    or parsed.path not in {"", "/"}
+                    or parsed.query
+                    or parsed.fragment
+                ):
+                    problems.append(
+                        f"POCKETSCORE_CORS_ORIGINS entry {origin!r} is not a scheme://host[:port] origin"
+                    )
         if "*" in self.cors_origins:
             problems.append("POCKETSCORE_CORS_ORIGINS must not contain '*' when credentials are allowed")
         if self.allow_private_network_sources:
@@ -275,6 +345,30 @@ class Settings(BaseSettings):
         if not p.is_absolute():
             p = (BACKEND_DIR / p).resolve()
         return p
+
+    def verify_runtime_writable(self) -> None:
+        """Fail fast when the data directory is not writable by this process.
+
+        The container runs as a non-root uid, and a pre-existing volume may be
+        owned by a different uid/gid. Without this check the first symptom is an
+        opaque SQLite "unable to open database file" during startup; with it the
+        log names the directory, the effective uid/gid and the fix.
+        """
+        import os
+        import uuid as _uuid
+
+        target = self.storage_path
+        try:
+            target.mkdir(parents=True, exist_ok=True)
+            probe = target / f".write-probe-{_uuid.uuid4().hex[:8]}"
+            probe.write_bytes(b"ok")
+            probe.unlink()
+        except OSError as exc:
+            raise RuntimeError(
+                f"storage directory {target} is not writable by uid={os.getuid() if hasattr(os, 'getuid') else '?'} "
+                f"gid={os.getgid() if hasattr(os, 'getgid') else '?'}: {exc}. The container runs as uid 10001; an "
+                "existing volume must be owned by 10001:10001 (one-off migration), never chowned recursively on boot."
+            ) from exc
 
     def ensure_directories(self) -> None:
         """Create every storage directory the application writes to."""

@@ -18,6 +18,7 @@ from app.core.config import get_settings
 from app.core.db import init_db
 from app.core.errors import AppError, InternalError
 from app.core.logging import configure_logging, get_logger, request_id_var
+from app.core.paths import scrub_paths
 
 logger = get_logger("pocketscore.app")
 
@@ -26,6 +27,12 @@ REQUEST_ID_HEADER = "X-Request-ID"
 
 def _error_response(exc: AppError, request_id: str) -> JSONResponse:
     payload = exc.to_payload()
+    # Defence in depth: no absolute filesystem path may reach a client, even if a
+    # low-level library put one into an error detail (V1.1-C.2.3.4.2).
+    if payload.get("message"):
+        payload["message"] = scrub_paths(payload["message"])
+    if payload.get("details"):
+        payload["details"] = scrub_paths(payload["details"])
     payload["request_id"] = request_id
     headers = {REQUEST_ID_HEADER: request_id}
     if exc.status_code == 401:
@@ -36,6 +43,10 @@ def _error_response(exc: AppError, request_id: str) -> JSONResponse:
 def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.log_level, settings.log_json)
+    # Fail fast (with uid/gid in the message) when the data directory is not
+    # writable by this process: the container runs as a non-root uid and a
+    # pre-existing volume may belong to another one (V1.1-C.2.3.4.3).
+    settings.verify_runtime_writable()
 
     app = FastAPI(
         title=settings.app_name,
@@ -58,15 +69,55 @@ def create_app() -> FastAPI:
     _gate = build_gate(settings)
     app.add_middleware(AccessGateMiddleware, gate=_gate)
 
+    # Rate limiting sits outside the gate so an unauthenticated flood is throttled
+    # before it reaches credential checks, and inside CORS so preflight is never
+    # blocked by a business limit (V1.1-C.2.3.4.3).
+    from app.core.ratelimit import (
+        BUCKET_GENERAL,
+        BUCKET_TRANSCRIPTION,
+        BUCKET_UPLOAD,
+        BUCKET_WAVEFORM,
+        RateLimiter,
+        RateLimitMiddleware,
+        Rule,
+        parse_cidrs,
+    )
+
+    _limiter = RateLimiter(
+        {
+            BUCKET_GENERAL: Rule(settings.rate_limit_requests, settings.rate_limit_window_seconds),
+            BUCKET_UPLOAD: Rule(settings.upload_rate_limit_requests, settings.upload_rate_limit_window_seconds),
+            BUCKET_TRANSCRIPTION: Rule(
+                settings.transcription_rate_limit_requests,
+                settings.transcription_rate_limit_window_seconds,
+            ),
+            BUCKET_WAVEFORM: Rule(
+                settings.waveform_rate_limit_requests, settings.waveform_rate_limit_window_seconds
+            ),
+        },
+        enabled=settings.rate_limiting_enabled,
+        max_keys=settings.rate_limit_max_keys,
+    )
+    _trusted = parse_cidrs(settings.trusted_proxy_cidrs)
+    app.add_middleware(RateLimitMiddleware, limiter=_limiter, trusted=_trusted)
+    app.state.rate_limiter = _limiter
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-        expose_headers=[REQUEST_ID_HEADER],
+        allow_methods=settings.cors_allow_methods,
+        allow_headers=settings.cors_allow_headers,
+        expose_headers=[REQUEST_ID_HEADER, "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining"],
     )
     app.state.access_gate = _gate
+
+    # Outermost: security headers must also be present on preflight and error
+    # responses, and must not interfere with the CORS headers added further in.
+    from app.core.security_headers import SecurityHeadersMiddleware, headers_for_settings
+
+    app.add_middleware(SecurityHeadersMiddleware, headers=headers_for_settings(settings))
+    app.state.security_headers = headers_for_settings(settings)
 
     @app.middleware("http")
     async def request_context(request: Request, call_next: Callable) -> Response:

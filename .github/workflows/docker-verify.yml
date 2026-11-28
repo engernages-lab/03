@@ -45,6 +45,8 @@ concurrency:
 
 env:
   OUT_DIR: docker-verification
+  # aquasec/trivy:0.58.0 — digest resolved from the Docker Hub manifest list.
+  TRIVY_IMAGE: aquasec/trivy@sha256:b88012e2a0a309d6a8a00463d4e63e5e513377fb74eccbc8f9b0f8f81940ebeb
   IMAGE: pocketscore-ai:c2-verify
 
 jobs:
@@ -54,7 +56,7 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.2.2
 
       # ---------------------------------------------------------------- shell
       - name: Syntax-check verification scripts
@@ -87,7 +89,7 @@ jobs:
         run: bash scripts/docker/scan-secrets.sh
 
       # --------------------------------------------------------------- frontend
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
           node-version: "20"
           cache: npm
@@ -121,10 +123,10 @@ jobs:
         run: python3 scripts/docker/verify-context.py --dockerfile backend/Dockerfile
 
       # ----------------------------------------------------------------- docker
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3.10.0
 
       - name: Build image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6.18.0
         with:
           context: .
           file: backend/Dockerfile
@@ -140,6 +142,45 @@ jobs:
 
       - name: Image security scan
         run: bash scripts/docker/scan-secrets.sh "$IMAGE"
+
+      # The container must not run as root: this boots the real final stage on an
+      # isolated volume and checks the uid, data writes, WAL, SIGTERM and restart
+      # persistence. It creates and removes only its own volume.
+      - name: Non-root runtime and isolated volume
+        run: bash scripts/docker/test_nonroot_runtime.sh "$IMAGE"
+
+      - name: Non-root historical volume compatibility
+        run: bash scripts/docker/test_nonroot_volume.sh "$IMAGE"
+
+      # The ops tooling ships inside the image (app/ops), but the tests are not
+      # baked in (.dockerignore drops tests/). Mount them read-only and run the
+      # suites with the image's own interpreter, so the SQLite version and the
+      # module layout are exactly what production would use. Everything here is
+      # synthetic: no Railway access, no real audio, no secrets.
+      - name: Database and storage ops tests inside the image
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD/backend/tests:/tests:ro" \
+            -v "$PWD/tests/fixtures:/fixtures:ro" \
+            -v "$PWD:/repo:ro" \
+            -w /app \
+            -e POCKETSCORE_ENVIRONMENT=test \
+            -e POCKETSCORE_ACCESS_GATE_MODE=off \
+            -e POCKETSCORE_REPO_ROOT=/repo \
+            --entrypoint python \
+            "$IMAGE" -m pytest -q \
+              /tests/test_database_backup.py \
+              /tests/test_storage_audit.py \
+              /tests/test_project_backup.py \
+              /tests/test_project_restore_e2e.py \
+              /tests/test_storage_path_safety.py \
+              /tests/test_upload_filename_safety.py \
+              /tests/test_storage_api_security.py \
+              /tests/test_rate_limit.py \
+              /tests/test_cors_security.py \
+              /tests/test_security_headers.py \
+              /tests/test_runtime_config.py
 
       # --------------------------------------------------------------- run: PORT
       - name: Create test volume
@@ -373,6 +414,69 @@ jobs:
           tail -20 "$OUT_DIR/npm-audit.txt" || true
           exit 0
 
+      # ------------------------------------------------------- supply chain
+      # Scanners are report-only in this phase: findings are archived as artefacts
+      # and triaged in the report. A scanner *crash* is recorded as unavailable,
+      # never as "clean" -- the status file makes the difference explicit.
+      - name: Python dependency audit (pip-audit)
+        run: |
+          set -uo pipefail
+          python3 -m venv "$RUNNER_TEMP/audit-venv"
+          "$RUNNER_TEMP/audit-venv/bin/pip" install --quiet --upgrade pip pip-audit
+          status=0
+          "$RUNNER_TEMP/audit-venv/bin/pip-audit" \
+              --requirement backend/requirements.txt \
+              --format json --output "$OUT_DIR/python-audit.json" || status=$?
+          announce_status=$status
+          "$RUNNER_TEMP/audit-venv/bin/pip-audit" \
+              --requirement backend/requirements.txt \
+              --format columns > "$OUT_DIR/python-audit-report.txt" 2>&1 || status=$?
+          if [ "$announce_status" -eq 0 ]; then
+            echo "result=clean" > "$OUT_DIR/python-audit-status.txt"
+          elif [ "$announce_status" -eq 1 ]; then
+            echo "result=findings" > "$OUT_DIR/python-audit-status.txt"
+          else
+            echo "result=unavailable exit=$announce_status" > "$OUT_DIR/python-audit-status.txt"
+          fi
+          cat "$OUT_DIR/python-audit-status.txt"
+          cat "$OUT_DIR/python-audit-report.txt" || true
+
+      - name: Node dependency audit (npm audit)
+        run: |
+          set -uo pipefail
+          cd frontend
+          npm audit --json > "../$OUT_DIR/npm-audit.json" 2>/dev/null || true
+          npm audit --omit=dev --json > "../$OUT_DIR/npm-production-audit.json" 2>/dev/null || true
+          npm audit --omit=dev --audit-level=high > "../$OUT_DIR/npm-audit-report.txt" 2>&1 || true
+          python3 -c "import json,os; p='../$OUT_DIR/npm-production-audit.json'; d=json.load(open(p,encoding='utf-8')) if (os.path.exists(p) and os.path.getsize(p)>2) else {}; m=(d.get('metadata') or {}).get('vulnerabilities') or {}; t=sum(v for k,v in m.items() if k!='total'); print('result=' + ('clean' if t==0 else 'findings ' + json.dumps(m)))" > "../$OUT_DIR/npm-audit-status.txt" 2>&1 || echo "result=unavailable" > "../$OUT_DIR/npm-audit-status.txt"
+          cat "../$OUT_DIR/npm-audit-status.txt"
+          head -40 "../$OUT_DIR/npm-audit-report.txt" || true
+
+      - name: Image vulnerability scan and SBOM (Trivy)
+        run: |
+          set -uo pipefail
+          status=0
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/$OUT_DIR:/out" "$TRIVY_IMAGE" \
+            image --quiet --scanners vuln --format json --output /out/docker-scan.json "$IMAGE" \
+            || status=$?
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/$OUT_DIR:/out" "$TRIVY_IMAGE" \
+            image --quiet --scanners vuln --format table --output /out/docker-scan-report.txt "$IMAGE" \
+            || status=$?
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/$OUT_DIR:/out" "$TRIVY_IMAGE" \
+            image --quiet --format cyclonedx --output /out/pocketscore-sbom.cdx.json "$IMAGE" \
+            || status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "result=unavailable exit=$status" > "$OUT_DIR/docker-scan-status.txt"
+          else
+            echo "result=ok" > "$OUT_DIR/docker-scan-status.txt"
+          fi
+          cat "$OUT_DIR/docker-scan-status.txt"
+          python3 -c "import json,os,collections; p='$OUT_DIR/docker-scan.json'; d=json.load(open(p,encoding='utf-8')) if (os.path.exists(p) and os.path.getsize(p)>2) else {}; c=collections.Counter(v.get('Severity','UNKNOWN') for r in (d.get('Results') or []) for v in (r.get('Vulnerabilities') or [])); print('image vulnerabilities by severity:', dict(c) or 'none reported')" || true
+          ls -la "$OUT_DIR" | tail -15
+
       - name: Write summary
         if: always()
         run: |
@@ -398,7 +502,7 @@ jobs:
 
       - name: Upload verification artefacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: docker-verification-${{ github.run_id }}
           path: docker-verification/

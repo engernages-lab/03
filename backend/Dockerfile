@@ -8,7 +8,7 @@
 # COPY. Building it here keeps the image self-contained.
 
 # ---- stage 1: build the SPA -------------------------------------------------
-FROM node:20-slim AS frontend
+FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS frontend
 
 WORKDIR /web
 
@@ -26,7 +26,7 @@ ENV VITE_BASE_PATH=${VITE_BASE_PATH}
 RUN npm run build && test -f dist/index.html
 
 # ---- stage 2: runtime -------------------------------------------------------
-FROM python:3.11-slim
+FROM python:3.11-slim@sha256:7032841967d07aa3353905945dc186901c89b6b319c61425f4439f677a4a8a34
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -64,15 +64,40 @@ COPY backend/alembic.ini ./alembic.ini
 # One service serves both the API and the SPA.
 COPY --from=frontend /web/dist ./frontend/dist
 
+# ---- non-root runtime user (V1.1-C.2.3.4.3) --------------------------------
+# The application runs as UID/GID 10001. Nothing in the image is group- or
+# world-writable: /app stays root-owned and read-only for the app user, and only
+# the data mount is writable.
+RUN groupadd --system --gid 10001 pocketscore \
+    && useradd --system --uid 10001 --gid pocketscore \
+       --home-dir /app --shell /usr/sbin/nologin pocketscore
+
 # Data lives on a volume so redeploys never touch user projects. The mount point
-# must exist and be writable before the platform attaches the volume.
+# must exist before the platform attaches the volume.
+#
+# Permissions: 0775 on /data with group pocketscore, NOT 0777. The container runs
+# as gid 10001, so it can create /data/storage and /data/backups on a fresh
+# volume. An existing Railway volume whose directories are owned by another
+# uid/gid is NOT chowned automatically — recursive chown on every boot is exactly
+# the pattern this phase forbids. See docs/operations for the one-off migration
+# options and the isolated-volume evidence.
 #
 # NOTE: no `VOLUME ["/data"]` instruction here on purpose. Railway validates the
 # Dockerfile and rejects it ("docker VOLUME is not supported, use Railway
 # Volumes"), because the platform attaches volumes itself. Locally and in CI the
 # volume is attached explicitly with `-v <name>:/data`, so nothing depends on the
 # instruction.
-RUN mkdir -p /data/storage && chmod 0777 /data
+RUN mkdir -p /data/storage /data/backups \
+    && chown -R 10001:10001 /data \
+    && chmod 0775 /data /data/storage /data/backups
+
+# A writable tmp for the streaming upload path; mounted tmpfs in hardened runs.
+RUN mkdir -p /app/tmp && chown 10001:10001 /app/tmp && chmod 0700 /app/tmp
+
+ENV TMPDIR=/app/tmp \
+    POCKETSCORE_BACKUP_DIR=/data/backups
+
+USER 10001:10001
 
 EXPOSE 8000
 
@@ -81,4 +106,10 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
 
 # Railway injects PORT; local runs fall back to 8000. `exec` keeps PID 1 as
 # uvicorn so SIGTERM triggers the graceful shutdown path.
-CMD ["sh", "-c", "exec python -m uvicorn app.main:app --host 0.0.0.0 --port \"${PORT:-8000}\" --timeout-graceful-shutdown 25 --proxy-headers --forwarded-allow-ips='*'"]
+#
+# Proxy trust: uvicorn may only rewrite the client address from X-Forwarded-For
+# when the peer is a trusted proxy. `POCKETSCORE_TRUSTED_PROXY_IPS` defaults to
+# loopback; deploying behind a platform edge that forwards from a private range
+# means setting it explicitly (e.g. 10.0.0.0/8). `*` is never the default, because
+# that would let any client forge an IP and bypass API rate limiting.
+CMD ["sh", "-c", "exec python -m uvicorn app.main:app --host 0.0.0.0 --port \"${PORT:-8000}\" --timeout-graceful-shutdown 25 --proxy-headers --forwarded-allow-ips=\"${POCKETSCORE_TRUSTED_PROXY_IPS:-127.0.0.1}\""]

@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.errors import NotFoundError, PayloadTooLargeError, ValidationAppError
 from app.core.logging import get_logger
+from app.core.paths import ensure_within, safe_resolve_storage_path, sanitize_upload_filename
 from app.models.audio import AudioAssetRecord
 from app.schemas.music_document import new_id
 from app.services.audio.probe import (
@@ -280,8 +281,9 @@ def _finalise_asset(
 
     record = AudioAssetRecord(
         id=new_id(),
-        filename=(filename or target.name)[:255],
-        stored_path=str(target.relative_to(settings.storage_path)),
+        filename=sanitize_upload_filename(filename or target.name)[:255],
+        # forward slashes keep the row portable between Windows dev and Linux prod
+        stored_path=target.relative_to(settings.storage_path).as_posix(),
         mime=MIME_TYPES.get(ext, "application/octet-stream"),
         ext=ext,
         size_bytes=size_bytes,
@@ -303,7 +305,17 @@ def _finalise_asset(
 
 
 def absolute_path(record: AudioAssetRecord) -> Path:
-    return get_settings().storage_path / record.stored_path
+    """Canonical path for an asset, guaranteed to stay inside the storage root.
+
+    `stored_path` is server-generated, but a corrupted or tampered row must not
+    turn into an arbitrary read/delete, so resolution goes through the shared
+    boundary check (V1.1-C.2.3.4.2). Missing files are allowed here because the
+    callers report their own 404/410; the parent boundary is still validated.
+    """
+    settings = get_settings()
+    return safe_resolve_storage_path(
+        settings.storage_path, record.stored_path, allow_missing=True
+    )
 
 
 def get_asset(session: Session, asset_id: str) -> AudioAssetRecord:
@@ -335,7 +347,9 @@ def list_assets(
 
 def delete_asset(session: Session, asset_id: str) -> None:
     record = get_asset(session, asset_id)
-    path = absolute_path(record)
+    # Resolve before the row disappears: a tampered stored_path must raise here
+    # rather than after the database row is already gone.
+    path = ensure_within(get_settings().storage_path, absolute_path(record))
     session.delete(record)
     session.commit()
     try:
