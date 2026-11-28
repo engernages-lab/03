@@ -36,6 +36,11 @@ def _error_code(body: bytes) -> str:
 
 def call(method: str, path: str, token: str, data: bytes | None = None,
          extra: dict | None = None) -> tuple[int, bytes]:
+    """Return (status, body); status 0 means a transport failure.
+
+    The body carries the exception class so the CI step can publish it through a
+    public artifact name -- the only diagnostics channel available here.
+    """
     headers = dict(extra or {})
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -46,7 +51,7 @@ def call(method: str, path: str, token: str, data: bytes | None = None,
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read()[:400]
     except Exception as exc:  # noqa: BLE001
-        return 0, f"{type(exc).__name__}: {exc}".encode()
+        return 0, f"TRANSPORT {type(exc).__name__}: {exc}".encode()
 
 
 def main() -> int:
@@ -80,6 +85,8 @@ def main() -> int:
     job_code = 0
     job_error = ""
     job_id = None
+    job_body = b""
+    after_job = 0
     if asset_id:
         job_code, job_body = call(
             "POST", "/api/v1/transcription/jobs", token,
@@ -87,10 +94,13 @@ def main() -> int:
             {"Content-Type": "application/json"},
         )
         job_error = _error_code(job_body)
+        if job_code == 0:
+            job_error = "TRANSPORT"
         try:
             job_id = json.loads(job_body).get("job_id")
         except Exception:  # noqa: BLE001
             job_id = None
+    after_job, _ = call("GET", "/health", "")
 
     run_code = 0
     run_error = ""
@@ -109,9 +119,12 @@ def main() -> int:
     print(
         f"health={health} anon={anonymous} authed={authenticated} upload={upload_code} "
         f"job={job_code}{('-' + job_error) if job_error else ''} "
+        f"after={after_job} "
         f"run={run_code}{('-' + run_error) if run_error else ''} "
         f"state={state or 'none'} events={events or 'none'}"
     )
+    if job_code == 0:
+        print("job_transport:", job_body.decode("utf-8", "replace")[:300])
     if not asset_id:
         print("upload_body:", upload_body.decode("utf-8", "replace")[:200])
     return 0
