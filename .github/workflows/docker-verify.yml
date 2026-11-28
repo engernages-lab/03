@@ -517,16 +517,16 @@ jobs:
           mode=resolved
           if [ -n "$AUDIT_CMD" ]; then
             # shellcheck disable=SC2086
-            timeout 420 $AUDIT_CMD --requirement backend/requirements.txt \
+            timeout 150 $AUDIT_CMD --requirement backend/requirements.txt \
                 --format json --output "$OUT_DIR/python-audit.json" || true
             if [ ! -s "$OUT_DIR/python-audit.json" ]; then
               mode=no-deps
               # shellcheck disable=SC2086
-              timeout 300 $AUDIT_CMD --requirement backend/requirements.txt --no-deps \
+              timeout 120 $AUDIT_CMD --requirement backend/requirements.txt --no-deps \
                   --format json --output "$OUT_DIR/python-audit.json" || true
             fi
             # shellcheck disable=SC2086
-            timeout 300 $AUDIT_CMD --requirement backend/requirements.txt --no-deps \
+            timeout 120 $AUDIT_CMD --requirement backend/requirements.txt --no-deps \
                 --format columns > "$OUT_DIR/python-audit-report.txt" 2>&1 || true
           else
             mode=unavailable
