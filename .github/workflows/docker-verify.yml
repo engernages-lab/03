@@ -381,6 +381,33 @@ jobs:
           echo "DIAG=${codes:-no-probe}" >> "$GITHUB_ENV"
           echo "::error title=transcription-diagnostics::${codes:-no-probe}"
 
+      - name: Container traceback fingerprint (public signal)
+        if: failure()
+        run: |
+          set -uo pipefail
+          name="pocketscore-c21-${RUN_ID}-main"
+          docker logs "$name" > /tmp/container.log 2>&1 || true
+          tail -120 /tmp/container.log || true
+
+          alive=$(docker inspect --format '{{.State.Running}}' "$name" 2>/dev/null || echo unknown)
+          tables=$(docker exec "$name" python -c "import sqlite3;print(len(list(sqlite3.connect('/data/pocketscore.db').execute(\"select name from sqlite_master where type='table'\"))))" 2>/dev/null || echo err)
+
+          fp=$(awk '/Traceback \(most recent call last\)/{buf=""} {buf=buf $0 "\n"} END{print buf}' /tmp/container.log \
+                | grep -vE '^\s*$' | tail -3 | tr '\n' ' ' || true)
+          fp=$(printf '%s' "${fp:-none}" | tr -cs 'A-Za-z0-9_.-' '-' | cut -c1-110)
+          digest="alive=${alive}-tables=${tables}-${fp}"
+          echo "DIAGTB=${digest}" >> "$GITHUB_ENV"
+          echo "::error title=container-traceback::${digest}"
+
+      - name: Upload container log fingerprint
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: tb-${{ env.DIAGTB }}
+          path: /tmp/container.log
+          retention-days: 5
+          if-no-files-found: warn
+
       - name: Upload transcription diagnostics
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
