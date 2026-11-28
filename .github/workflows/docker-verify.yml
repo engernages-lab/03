@@ -368,7 +368,30 @@ jobs:
             --audio tests/fixtures/melody.wav \
             --out "$OUT_DIR/transcription-result.json"
 
+      # Logs need credentials here, but artifact names are public: the probe
+      # results are encoded into the artifact name so a fast-failing step can be
+      # diagnosed without guessing. This never replaces the real check.
+      - name: Transcription diagnostics (public signal)
+        if: failure()
+        run: |
+          set -uo pipefail
+          python3 scripts/docker/diagnose-transcription.py "${TEST_ACCESS_TOKEN}" \
+            | tee /tmp/diag.txt || true
+          codes=$(head -1 /tmp/diag.txt | tr ' ' '-')
+          echo "DIAG=${codes:-no-probe}" >> "$GITHUB_ENV"
+          echo "::error title=transcription-diagnostics::${codes:-no-probe}"
+
+      - name: Upload transcription diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: diag-${{ env.DIAG }}
+          path: /tmp/diag.txt
+          retention-days: 5
+          if-no-files-found: warn
+
       - name: Reject an unsupported upload
+
         run: |
           set -euo pipefail
           # the endpoint is behind the access gate: authenticate first, then the
