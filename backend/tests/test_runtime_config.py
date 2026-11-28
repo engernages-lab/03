@@ -12,9 +12,19 @@ from pathlib import Path
 
 import pytest
 
+
 # In CI the test suite runs inside the image with the repo mounted read-only at
 # /repo; locally it walks up from the test file.
-ROOT = Path(os.environ.get("POCKETSCORE_REPO_ROOT") or Path(__file__).resolve().parents[2])
+def _repo_root() -> Path:
+    override = os.environ.get("POCKETSCORE_REPO_ROOT")
+    if override:
+        return Path(override)
+    here = Path(__file__).resolve()
+    # /tests/x.py has only two parents; parents[2] would raise IndexError.
+    return here.parents[2] if len(here.parents) > 2 else here.parent
+
+
+ROOT = _repo_root()
 DOCKERFILE = ROOT / "backend" / "Dockerfile"
 WORKFLOW = ROOT / ".github" / "workflows" / "docker-verify.yml"
 

@@ -20,18 +20,28 @@ from pathlib import Path
 
 import pytest
 
-FIXTURE_CANDIDATES = (
-    Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "melody.wav",  # repo checkout
-    Path("/tests/fixtures/melody.wav"),   # tests/ mounted at /tests in the image
-    Path("/fixtures/melody.wav"),         # fixtures/ mounted on its own in the image
-)
+_HERE = Path(__file__).resolve()
+
+
+def _candidates() -> tuple[Path, ...]:
+    """Fixture locations, safe for shallow paths such as /tests/x.py in the image.
+
+    ``parents[2]`` raises IndexError when the test file lives two levels below the
+    filesystem root, which is exactly the mounted layout (/tests/test_*.py), so the
+    repo-checkout candidate is only added when there are enough parents.
+    """
+    found = [_HERE.parent / "fixtures" / "melody.wav"]
+    if len(_HERE.parents) > 2:
+        found.append(_HERE.parents[2] / "tests" / "fixtures" / "melody.wav")
+    found.extend([Path("/tests/fixtures/melody.wav"), Path("/fixtures/melody.wav")])
+    return tuple(found)
 
 
 def _fixture() -> Path:
-    for candidate in FIXTURE_CANDIDATES:
+    for candidate in _candidates():
         if candidate.is_file():
             return candidate
-    raise AssertionError(f"melody.wav not found; looked in {[str(c) for c in FIXTURE_CANDIDATES]}")
+    raise AssertionError(f"melody.wav not found; looked in {[str(c) for c in _candidates()]}")
 
 
 def _reset_runtime() -> None:
