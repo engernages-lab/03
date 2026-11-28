@@ -559,6 +559,27 @@ jobs:
           python3 -c "import json,os,collections; p='$OUT_DIR/docker-scan.json'; d=json.load(open(p,encoding='utf-8')) if (os.path.exists(p) and os.path.getsize(p)>2) else {}; c=collections.Counter(v.get('Severity','UNKNOWN') for r in (d.get('Results') or []) for v in (r.get('Vulnerabilities') or [])); print('image vulnerabilities by severity:', dict(c) or 'none reported')" || true
           ls -la "$OUT_DIR" | tail -15
 
+      - name: Verify supply-chain artefacts
+        run: |
+          set -euo pipefail
+          test -s "$OUT_DIR/pocketscore-sbom.cdx.json" || { echo "::error::SBOM missing or empty"; exit 1; }
+          python3 -c "import json; d=json.load(open('$OUT_DIR/pocketscore-sbom.cdx.json')); assert d.get('bomFormat')=='CycloneDX', d.get('bomFormat'); n=len(d.get('components') or []); assert n>0, 'SBOM has no components'; print('SBOM ok: CycloneDX with', n, 'components')"
+          missing=0
+          for f in python-audit.json npm-audit.json npm-production-audit.json docker-scan.json \
+                   python-audit-status.txt npm-audit-status.txt docker-scan-status.txt; do
+            if [ ! -s "$OUT_DIR/$f" ]; then
+              echo "::warning title=missing-artefact::$f is missing or empty"
+              missing=$((missing + 1))
+            fi
+          done
+          echo "--- scanner status files ---"
+          for f in "$OUT_DIR"/*-status.txt; do
+            [ -f "$f" ] || continue
+            echo "$(basename "$f"): $(cat "$f")"
+          done
+          echo "missing artefacts: $missing"
+          test "$missing" -eq 0 || { echo "::error::supply-chain artefacts incomplete"; exit 1; }
+
       - name: Write summary
         if: always()
         run: |
